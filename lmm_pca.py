@@ -57,26 +57,23 @@ Xz = zscore(X)
 pca = PCA(svd_solver='full').fit(Xz)
 
 # calculate principle component scores; use the top three for dev
-scores = Xz.dot(pca.components_[:3, :].T)
+scores = Xz.dot(pca.components_[:1, :].T)
 for i in range(scores.shape[-1]):
     data[f"factor_{i + 1}"] = scores[:, i]
 
-#%% parallel mixed modelling
+#%% parallel mixed modelling - formula method
 
 # define model
-# this is the same as the following model in R
-# lmer(factor_i ~  1 + C(nBack) + (1|C(RIDNO)) + (1|C(session)), data=data) 
+# this nested model can be recreated in R as follow
+# lmer(factor_i ~  1 + C(nBack) + (1 + C(nBack)|C(RIDNO)/C(session)), data=data) 
 # i = 1, ...., m 
 # m is the number of componensts
-# zero back conditon is the reference condition
-# intercept as fixed effect
-# variance component to specify the design - fit random intercept
+
 model = {
-    "formula": f"factor_{i + 1} ~ 1 + C(nBack)",  
+    "formula": f"~ 1 + C(nBack)",  
     "groups": "RIDNO",
-    "vcf": {"session": "0 + C(session)",  # time - not expecting much 
-           "RIDNO": "0 + C(RIDNO)"  # subject
-           }
+    "re_formula": "1 + C(nBack)",  # fit random intercept (1) and slope (C(nBack)) 
+    "vcf": {"session": "0 + C(session)"}  # nested random effect
 }
 
 model_parameters = []
@@ -86,12 +83,14 @@ m_components = scores.shape[-1]
 h1_models = []
 for i in range(m_components):
     print(f"{i + 1} / {m_components}")
-    mixed = smf.mixedlm(model["formula"], data, 
-                        groups=model["groups"], 
+    mixed = smf.mixedlm(f"factor_{i + 1}"  + model["formula"],
+                        data, 
+                        groups=model["groups"],
+                        re_formula=model["re_formula"],
                         vc_formula=model["vcf"])
     # fit the model
     mixed_fit = mixed.fit()
-
+    # print(mixed_fit.summary())
     # save fitted model
     h1_models.append(mixed_fit)
 
@@ -99,13 +98,14 @@ for i in range(m_components):
 # rewrite the LMM as effect matrix decomposition
 
 # get the design matrix for the fixed effect (one vs zero back)
-var = data[["nBack"]]
-intercept = np.ones((data.shape[0], 1))
-var = np.hstack((intercept, var.values))
+var = mixed.exog_re.copy()
+fixed_var = mixed.exog_names # save the real fixed effect var names
 
 # get the design matrix for the random effect
 re_names = mixed.exog_vc.names
 re_mats = mixed.exog_vc.mats
+assert len(re_names) == len(re_mats)
+group_info = mixed.exog_re_li
 
 # calculat the effect matrix
 Mf = []
@@ -115,7 +115,7 @@ for i in range(m_components):
     model_parameters = h1_models[i].params
 
     # fixed effect
-    fe = model_parameters[fixed_var]
+    fe = h1_models[i].fe_params
     mf_j = []
     for j, coef in enumerate(fe):
         tau_fe = var[:, j]
@@ -126,16 +126,27 @@ for i in range(m_components):
     randome_effect = h1_models[i].random_effects
     mr_i = []
     for mats, name in zip(re_mats, re_names):
+        print(name)
         mr_k = []
-        for k, g in enumerate(randome_effect.keys()):
+        for k, g in enumerate(randome_effect.keys()): # by subject
+            # handle re defined by variance component formula first
             tau_idx = [idx for idx in randome_effect[g].index \
                 if name in idx]
+
+            # effect with multiple level
             tau = randome_effect[g][tau_idx].values
             z = mats[k]
             m = np.dot(z, tau)
             mr_k += list(m)
+        
+        # effects with one or two level
+        group_eff = randome_effect[g].index.difference(tau_idx)
+        tau = randome_effect[g][group_eff].values
+        m = group_info[k] * tau
+        mr_k += list(m)
+
         mr_i.append(np.array(mr_k))
-    Mr_j.append(mr_i)
+    Mr.append(mr_i)
 
     # residual
     residual_matrix.append(h1_models[i].resid)
@@ -144,11 +155,11 @@ for i in range(m_components):
 est_var_resid = np.var(np.array(residual_matrix), axis=1)  # redisuals
 
 est_var_random_j = []
-for mr_i in Mr_j:
+for mr_i in Mr:
     est_var_random_j.append(np.var(mr_i, axis=1))
 
 est_var_fixed_j = []
-for mf_i in Mf_j:
+for mf_i in Mf:
     est_var_fixed_j.append(np.var(mf_i, axis=1))
 
 est_var_full = np.sum(est_var_fixed_j, axis=1) \
@@ -162,7 +173,7 @@ percent_var_exp = np.vstack((
     est_var_resid)) / est_var_full * 100
 percent_var_exp = pd.DataFrame(percent_var_exp,
                                columns=np.arange(1, m_components + 1),
-                               index=fixed_var + list(vc.keys()) + ["residual"])
+                               index=fixed_var + re_names + ["residual"])
 percent_var_exp["Effect"] = percent_var_exp.index
 percent_var_exp = percent_var_exp.melt(id_vars="Effect", value_name="variance(%)", var_name="PC")
 
@@ -171,6 +182,7 @@ sns.barplot(x="Effect", y="variance(%)", hue="PC",
             data=percent_var_exp[percent_var_exp["Effect"]!="Intercept"])
 plt.title("Variance of components")
 plt.show()
+
 #%% significance testing
 
 null_models = {
