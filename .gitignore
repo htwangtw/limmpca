@@ -1,4 +1,8 @@
 data/
+confirmations/
+results/
+.Rhistory
+
 # Byte-compiled / optimized / DLL fles
 __pycache__/
 *.py[cod]

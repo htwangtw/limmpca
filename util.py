@@ -22,16 +22,16 @@ def varimax(Phi, gamma = 1, q = 20, tol = 1e-6):
     return dot(Phi, R)
 
 
-def correct_scale(data):
+def correct_scale(data, labels):
     # correct each subject by used scale range
     for id in np.unique(data.RIDNO):
         id_idx = data['RIDNO'].str.match(id)
-        cur = data[id_idx].loc[:, "MWQ_Focus":"MWQ_Deliberate"].values
+        cur = data[id_idx].loc[:, labels].values
         scling = np.max(cur.flatten())
         floor = np.min(cur.flatten())
         cur = (cur - floor) / scling
         # update
-        data[id_idx].loc[:, "MWQ_Focus":"MWQ_Deliberate"] = cur
+        data[id_idx].loc[:, labels] = cur
     return data
 
 def parallel_mixed_modelling(model, data, pca_scores):
@@ -59,7 +59,7 @@ def parallel_mixed_modelling(model, data, pca_scores):
     # get the design matrix for the fixed effect, random effect
     design = {
         "group_info": mixed.exog_re_li,
-        "fe_mats": mixed.exog_re.copy(),
+        "fe_mats": mixed.exog.copy(),
         "fe_names": mixed.exog_names,
         "vc_names": mixed.exog_vc.names,
         "vc_mats": mixed.exog_vc.mats,
@@ -75,13 +75,13 @@ def effect_matrix_decomposition(h1_models, design):
         return resid
 
     def fixed_effects(model, design):
-        model_parameters = model.params
         # fixed effect
         fe_params = model.fe_params
         mf = {}
-        for j, coef in enumerate(fe_params):
+        for j, name in enumerate(design["fe_names"]):
+            coef = fe_params[name]
             tau_fe = design["fe_mats"][:, j]
-            mf[design["fe_names"][j]] = np.dot(coef, tau_fe)
+            mf[name] = np.dot(coef, tau_fe)
         mf = pd.DataFrame(mf)
         return mf
 
@@ -146,5 +146,65 @@ def variance_explained(effect_mats):
     percent_var_exp /= est_var_full / 100
     percent_var_exp.columns = range(1, n_components + 1)
     percent_var_exp["Effect"] = percent_var_exp.index
-    percent_var_exp = percent_var_exp.melt(id_vars="Effect", value_name="variance(%)", var_name="PC")
+    percent_var_exp = percent_var_exp.melt(id_vars="Effect", 
+                                           value_name="variance(%)", 
+                                           var_name="PC")
     return percent_var_exp
+
+def bootstrap_effect(obs_resid_sigmasqr, obs_rand_sigmasqr, 
+                     boot_sample_size, h0_models, h0_design):
+
+    def residuals(sigma, boot_sample_size): 
+        boot_resid = np.random.normal(0, sigma, boot_sample_size)
+        return boot_resid
+
+    def fixed_eff(model, h0_design):
+        obs_fixed = h0_design["fe_mats"].dot(model.fe_params)
+        return obs_fixed
+
+    def random_eff(model, h0_design, sigma):
+        # random effects of the current factor
+        # this is a dictionary of data frames one entry per group
+        re_summary = model.random_effects
+        mr = 0
+        tau_idx_multiple = []
+        # handle re defined by variance component formula first
+        for mats, name in zip(h0_design["vc_mats"], h0_design["vc_names"]):
+            mr_k = []
+            for k, g in enumerate(re_summary.keys()): # by subject
+                z = mats[k]
+                tau_idx = f"random effect: \n{name}"
+                tau_shape = z.shape[-1]
+                tau = np.random.normal(0, sigma[tau_idx], tau_shape)
+                m_k = np.dot(z, tau)
+                mr_k += list(m_k)
+                if tau_idx not in tau_idx_multiple:
+                    tau_idx_multiple.append(tau_idx)
+            # save the current matrix, matrix size should be N x 1
+            mr += np.array(mr_k)
+
+        mr_k = []
+        # effects with one or two level, 
+        # not defined through variance component
+        for k, g in enumerate(re_summary.keys()):
+            group_eff = sigma.index.difference(tau_idx_multiple)
+            tau_shape = h0_design["group_info"][k].shape[1]
+            tau = np.random.normal(0, sigma[group_eff], tau_shape)
+            m_k = h0_design["group_info"][k] * tau
+            mr_k += list(m_k)
+        mr_k = np.array(mr_k)
+        mr += np.sum(mr_k, axis=1)
+        return mr
+    
+    m_components = len(h0_models)
+    Y_ests = []
+    for i in range(m_components):
+        model = h0_models[i]
+        sigma = obs_resid_sigmasqr[i]
+        Y_est = residuals(sigma, boot_sample_size)
+        Y_est += fixed_eff(model, h0_design) 
+        sigma = obs_rand_sigmasqr[i]
+        Y_est += random_eff(model, h0_design, sigma)
+        Y_ests.append(Y_est)
+    Y_ests = np.array(Y_ests).T
+    return Y_ests
