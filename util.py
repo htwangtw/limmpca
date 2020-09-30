@@ -34,6 +34,7 @@ def correct_scale(data, labels):
         data[id_idx].loc[:, labels] = cur
     return data
 
+
 def parallel_mixed_modelling(model, data, pca_scores):
 
     # add PC scores to the data frame
@@ -42,7 +43,7 @@ def parallel_mixed_modelling(model, data, pca_scores):
         data[f"factor_{i + 1}"] = pca_scores[:, i]
 
     # run the model
-    h1_models = []
+    fitted_models = []
     for i in range(m_components):
         print(f"{i + 1} / {m_components}")
         mixed = smf.mixedlm(f"factor_{i + 1}"  + model["formula"],
@@ -54,89 +55,102 @@ def parallel_mixed_modelling(model, data, pca_scores):
         mixed_fit = mixed.fit()
         # print(mixed_fit.summary())
         # save fitted model
-        h1_models.append(mixed_fit)
+        fitted_models.append(mixed_fit)
+    return fitted_models
 
-    # get the design matrix for the fixed effect, random effect
-    design = {
-        "group_info": mixed.exog_re_li,
-        "fe_mats": mixed.exog.copy(),
-        "fe_names": mixed.exog_names,
-        "vc_names": mixed.exog_vc.names,
-        "vc_mats": mixed.exog_vc.mats,
-    }
-    return h1_models, design
 
-def effect_matrix_decomposition(h1_models, design):
+def effect_matrix_decomposition(fitted_models):
 
-    def residuals(model): 
-        resid = model.resid.copy()
-        resid.name = "residual"
-        resid = resid.reset_index(drop=True)
-        return resid
-
-    def fixed_effects(model, design):
+    def fixed_effects(results):
         # fixed effect
-        fe_params = model.fe_params
+        fe_params = results.fe_params
         mf = {}
-        for j, name in enumerate(design["fe_names"]):
+        for j, name in enumerate(results.model.exog_names):
             coef = fe_params[name]
-            tau_fe = design["fe_mats"][:, j]
+            tau_fe = results.model.exog[:, j]
             mf[name] = np.dot(coef, tau_fe)
         mf = pd.DataFrame(mf)
         return mf
 
-    def random_effects(model, design):
+    def random_effects(results):
         # random effects of the current factor
         # this is a dictionary of data frames one entry per group
-        re_summary = model.random_effects
+        re = results.random_effects
         mr = {}
+        # for each group
+        for group_ix, group in enumerate(results.model.group_labels):
+            # get random structure design
+            ix = results.model.row_indices[group]
+            mat = []
+            if results.model.exog_re_li is not None:
+                mat.append(results.model.exog_re_li[group_ix])
+            for j in range(results.k_vc):
+                mat.append(results.model.exog_vc.mats[j][group_ix])
+            mat = np.concatenate(mat, axis=1)
+            mat = pd.DataFrame(mat, columns=re[group].index)
 
-        # handle re defined by variance component formula first
-        tau_idx_multiple = []
-        for mats, name in zip(design["vc_mats"], design["vc_names"]):
-            mr_k = []
-            cur_tau_index = []
-            for k, g in enumerate(re_summary.keys()): # by subject
-                tau_idx = [idx for idx in re_summary[g].index \
-                    if name in idx]
-                tau = re_summary[g][tau_idx].values
-                z = mats[k]
-                m_k = np.dot(z, tau)
-                mr_k += list(m_k)
-                # collect lable indicating effect with multuple levels
-                if len(tau_idx) > len(cur_tau_index):
-                    cur_tau_index += tau_idx
+            # handle random structure of multiple level
+            # this loop would be ignored if no nested structure was modeled
+            levels = []
+            for vc in results.model.exog_vc.names:
+                colname = f"random effect: {vc}"
+                # get all columns related to this random structure
+                vc_labels = [r for r in re[group].index if vc in r]
+                levels += vc_labels
+
+                coef = re[group][vc_labels]
+                tau = mat[vc_labels]
+                mr_j = np.dot(tau, coef)
+                # create an entry in dict if not present
+                try: 
+                    mr[colname]
+                except KeyError:
+                    mr[colname] = np.array([])
+                # concatenate current subject's variance 
+                # to the data
+                if not mr[colname].any():
+                    print("first sub")
+                    mr[colname] = mr_j
                 else:
-                    pass
-            tau_idx_multiple += cur_tau_index
-            # save the current matrix, matrix size should be N x 1
-            mr["random effect: \n" + name] = np.array(mr_k)
+                    mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
 
-        mr_k = []
-        # effects with one or two level, 
-        # not defined through variance component
-        for k, g in enumerate(re_summary.keys()):
-            group_eff = re_summary[g].index.difference(tau_idx_multiple)
-            tau = re_summary[g][group_eff].values
-            m_k = design["group_info"][k] * tau
-            mr_k += list(m_k)
-        mr_k = np.array(mr_k)
-        for j, name in enumerate(group_eff):
-            mr["random effect: \n" + name] = mr_k[:, j]
+            # random coefficients or structure with one level only
+            remained_labels = re[group][~re[group].index.isin(levels)]
+            for re_name, coef in remained_labels.iteritems():
+                colname = f"random effect: {re_name}"
+                tau = mat[re_name]
+                mr_j = np.dot(tau, coef)
+                # create an entry in dict if not present
+                try: 
+                    mr[colname]
+                except KeyError:
+                    mr[colname] = np.array([])
+                # concatenate current subject's variance 
+                # to the data
+                if not mr[colname].any():
+                    mr[colname] = mr_j
+                else:
+                    mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
         mr = pd.DataFrame(mr)
         return mr
     
-    m_components = len(h1_models)
+    # claculate the fitted values and model error
+    m_components = len(fitted_models)
     effect_mats = []
     for i in range(m_components):
-        model = h1_models[i]
-        mf_i = fixed_effects(model, design)
-        mr_i = random_effects(model, design)
-        resid_i = residuals(model)
+        results = fitted_models[i]
+        mf_i = fixed_effects(results)
+        mr_i = random_effects(results)
+        # fitted_val should be the same as results.fittedvalues
+        fitted_val = mf_i.sum(axis=1) + mr_i.sum(axis=1) 
+        # resid_i should be the same as results.resid
+        resid_i = results.model.endog - fitted_val
+        resid_i = pd.Series(resid_i, name="residuals")
         effect_mat = pd.concat((mf_i, mr_i, resid_i), axis=1)
         effect_mats.append(effect_mat)
     
     return effect_mats
+
 
 def variance_explained(effect_mats):
     n_components = len(effect_mats)
@@ -151,60 +165,53 @@ def variance_explained(effect_mats):
                                            var_name="PC")
     return percent_var_exp
 
-def bootstrap_effect(obs_resid_sigmasqr, obs_rand_sigmasqr, 
-                     boot_sample_size, h0_models, h0_design):
+
+def bootstrap_effect(obs_sigmasqr, boot_sample_size, h0_models):
 
     def residuals(sigma, boot_sample_size): 
         boot_resid = np.random.normal(0, sigma, boot_sample_size)
         return boot_resid
 
-    def fixed_eff(model, h0_design):
-        obs_fixed = h0_design["fe_mats"].dot(model.fe_params)
-        return obs_fixed
+    def fixed_effects(results):
+        # fixed effect
+        fe_params = results.fe_params
+        mf = np.dot(results.model.exog, fe_params)
+        return mf
 
-    def random_eff(model, h0_design, sigma):
+    def random_effects(results, sigmas):
         # random effects of the current factor
         # this is a dictionary of data frames one entry per group
-        re_summary = model.random_effects
-        mr = 0
-        tau_idx_multiple = []
-        # handle re defined by variance component formula first
-        for mats, name in zip(h0_design["vc_mats"], h0_design["vc_names"]):
-            mr_k = []
-            for k, g in enumerate(re_summary.keys()): # by subject
-                z = mats[k]
-                tau_idx = f"random effect: \n{name}"
-                tau_shape = z.shape[-1]
-                tau = np.random.normal(0, sigma[tau_idx], tau_shape)
-                m_k = np.dot(z, tau)
-                mr_k += list(m_k)
-                if tau_idx not in tau_idx_multiple:
-                    tau_idx_multiple.append(tau_idx)
-            # save the current matrix, matrix size should be N x 1
-            mr += np.array(mr_k)
-
-        mr_k = []
-        # effects with one or two level, 
-        # not defined through variance component
-        for k, g in enumerate(re_summary.keys()):
-            group_eff = sigma.index.difference(tau_idx_multiple)
-            tau_shape = h0_design["group_info"][k].shape[1]
-            tau = np.random.normal(0, sigma[group_eff], tau_shape)
-            m_k = h0_design["group_info"][k] * tau
-            mr_k += list(m_k)
-        mr_k = np.array(mr_k)
-        mr += np.sum(mr_k, axis=1)
+        re = results.random_effects
+        mr = []
+        # for each group
+        for group_ix, group in enumerate(results.model.group_labels):
+            # get random structure design
+            ix = results.model.row_indices[group]
+            mat = []
+            if results.model.exog_re_li is not None:
+                mat.append(results.model.exog_re_li[group_ix])
+            for j in range(results.k_vc):
+                mat.append(results.model.exog_vc.mats[j][group_ix])
+            mat = np.concatenate(mat, axis=1)
+            rand_idx = [idx.replace('random effect: ', '') for idx in re[group].index]
+            null_ss = []
+            for j in rand_idx:
+                real_label = j.split("[")[0]
+                ss = sigmas[real_label]
+                null_ss.append(np.random.normal(0, ss))
+            mr.append(np.dot(mat, np.array(null_ss)))
+        mr = np.concatenate(mr)
         return mr
     
     m_components = len(h0_models)
     Y_ests = []
     for i in range(m_components):
         model = h0_models[i]
-        sigma = obs_resid_sigmasqr[i]
-        Y_est = residuals(sigma, boot_sample_size)
-        Y_est += fixed_eff(model, h0_design) 
-        sigma = obs_rand_sigmasqr[i]
-        Y_est += random_eff(model, h0_design, sigma)
+        ss = obs_sigmasqr.loc["residuals", i]
+        Y_est = residuals(ss, boot_sample_size)
+        Y_est += fixed_effects(model) 
+        ss = obs_sigmasqr.loc[:, i]
+        Y_est += random_effects(model, ss)
         Y_ests.append(Y_est)
     Y_ests = np.array(Y_ests).T
     return Y_ests

@@ -19,21 +19,21 @@ from util import (parallel_mixed_modelling, effect_matrix_decomposition,
 #%% load data and basic clean up
 
 # use the top three for dev
-n_components = 2
+n_components = 6
 pca_varimax = "; raw"
 varimax_on = False
 
 es_path = "data/task-nbackES_probes_trial_interval.tsv"
 data = pd.read_csv(es_path, sep="\t")
+# use the first cohort
+data = data[data.IDNO < 500]
 
 # drop rows with no data
 data = data.dropna()
 data["group"] = 0  # nul model
 data["nBack"] = data["nBack"].astype(int)
 data["session"] = data["session"].astype(int)
-
-# use the first cohort
-data = data[data.IDNO < 500]
+data["intervals"] = zscore(data["interval"])
 
 # normalise the scale to 0 -1 based on scale range used per individual
 labels = [c for c in data.columns if "MWQ" in c]
@@ -87,29 +87,56 @@ for i in range(scores.shape[-1]):
 # lmer(factor_i ~  1 + C(nBack) + (1 + C(nBack)|C(RIDNO)/C(session)), data=data) 
 # i = 1, ...., m 
 # m is the number of componensts
-model = {
+full_model = {
     "formula": "~ 1 + C(nBack) + interval",  
     "groups": "RIDNO",
-    "re_formula": "1 + C(nBack) + interval",  # fit random intercept (1) and slope (C(nBack)) 
+    "re_formula": "1",  # fit random intercept (1) and slope (C(nBack)) 
     "vcf": {"session": "0 + C(session)"}  # nested random effect
 }
-# model = {
-#     "formula": "~ 1 + C(nBack) : MWQ_Focus",  
+# full_model = {
+#     "formula": "~ 1 + C(nBack) + interval + corr",  
 #     "groups": "RIDNO",
-#     "re_formula": "1 + C(nBack) : MWQ_Focus",  # fit random intercept (1) and slope (C(nBack)) 
+#     "re_formula": "1 + C(nBack) + interval + corr",  # fit random intercept (1) and slope (C(nBack)) 
 #     "vcf": {"session": "0 + C(session)"}  # nested random effect
 # }
+#%% null model for significance testing
+null_models = {
+    "nBack": {
+        "formula": "~ 1 + interval",
+        "groups": "RIDNO",
+        "re_formula": "1",
+        "vcf": {"session": "0 + C(session)"} 
+        },
+    "interval": {
+        "formula": "~ 1 + C(nBack) + C(session)",
+        "groups": "RIDNO",
+        "re_formula": "1",
+        "vcf": None
+        },
+    "RIDNO": {
+        "formula": "~ 1 + C(nBack) + interval + C(session)",
+        "groups": "groups",
+        "re_formula": "1 + C(nBack) + interval",
+        "vcf": None
+        },
+    "session": {
+        "formula": "~ 1 + C(nBack) + interval",
+        "groups": "RIDNO",
+        "re_formula": "1 + C(nBack) + interval",
+        "vcf": None
+        },
+}
 
-h1_models, design = parallel_mixed_modelling(model, data, scores)
+#%% run true model
+h1_models = parallel_mixed_modelling(full_model, data, scores)
 
 # effect matrix decomposition
 # rewrite the LMM as effect matrix decomposition
-effect_mats = effect_matrix_decomposition(h1_models, design)
+effect_mats = effect_matrix_decomposition(h1_models)
 
 # percentage of variance explained by variable
 percent_var_exp = variance_explained(effect_mats)
 
-#%% plotting
 # plot results so far
 chart = sns.barplot(x="Effect", y="variance(%)", 
                     hue="PC", data=percent_var_exp
@@ -122,44 +149,16 @@ chart.set_xticklabels(
 plt.title("Variance of components" + pca_varimax)
 plt.show()
 
-plt.matshow(pc.T, cmap="RdBu_r")
-plt.xticks(ticks=range(n_components), 
-           labels=range(1, n_components + 1))
-# plt.yticks(ticks=range(12),
-#            labels=data.loc[:, 'MWQ_Future':'MWQ_Deliberate'].columns)
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, labels].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-
-#%% significance testing
-null_models = {
-    "nBack": {
-        "formula": "~ 1 + interval",
-        "groups": "RIDNO",
-        "re_formula": "1 + interval",
-        "vcf": {"session": "0 + C(session)"}
-        },
-    "interval": {
-        "formula": "~ 1 + C(nBack)",
-        "groups": "RIDNO",
-        "re_formula": "1 + C(nBack)",
-        "vcf": {"session": "0 + C(session)"}
-        },
-    "RIDNO": {
-        "formula": "~ 1 + C(nBack) + interval",
-        "groups": "session",
-        "re_formula": "1 + C(nBack) + interval",
-        "vcf": None
-        },
-    "session": {
-        "formula": "~ 1 + C(nBack) + interval",
-        "groups": "RIDNO",
-        "re_formula": "1 + C(nBack) + interval",
-        "vcf": None
-        },
-}
+# plt.matshow(pc.T, cmap="RdBu_r")
+# plt.xticks(ticks=range(n_components), 
+#            labels=range(1, n_components + 1))
+# # plt.yticks(ticks=range(12),
+# #            labels=data.loc[:, 'MWQ_Future':'MWQ_Deliberate'].columns)
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, labels].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
 
 #%% bootstrapping
 bootstrap_n = 100
@@ -182,17 +181,18 @@ for nm in null_models.keys():
     print("set up null model")
     # set up null model
     cur_null = null_models[nm] 
-    h0_models, h0_design = parallel_mixed_modelling(cur_null, 
-                data, scores)
+    h0_models = parallel_mixed_modelling(cur_null, data, scores)
 
-    obs_effect = effect_matrix_decomposition(h0_models, h0_design)
+    obs_effect = effect_matrix_decomposition(h0_models)
 
     obs_gllr = calculate_gllr(h1_models, h0_models)
 
-    obs_resid_sigmasqr = [np.var(orv["residual"]) for orv in obs_effect]
-
-    obs_rand_label = [c for c in obs_effect[0].columns if "random effect:" in c]
-    obs_rand_sigmasqr = [np.var(orv[obs_rand_label]) for orv in obs_effect]
+    # get sigma squared (variance) from redisuals and random factors
+    obs_nullify_ix = [c for c in obs_effect[0].columns if "random effect:" in c or "residuals" in c]
+    obs_sigma = [np.std(orv[obs_nullify_ix]) for orv in obs_effect]
+    obs_sigma = pd.concat(obs_sigma, axis=1)
+    obs_nullify_ix = [o.replace('random effect: ', '') for o in obs_nullify_ix]
+    obs_sigma.index = obs_nullify_ix
 
     # boot strapping
     boot_gllrs = []
@@ -203,24 +203,41 @@ for nm in null_models.keys():
         boot = resample(range(boot_sample_size), replace=True, 
                         n_samples=boot_sample_size)
         
-        est_scores = bootstrap_effect(obs_resid_sigmasqr, obs_rand_sigmasqr, 
-                        boot_sample_size, h0_models, h0_design)
-        est_scores = np.array(est_scores).T
+        est_scores = bootstrap_effect(obs_sigma, boot_sample_size, h0_models)
+        sns.heatmap(np.corrcoef(est_scores.T, scores.T))
+
         print("restricted model")
-        boot_restrict, _ = parallel_mixed_modelling(cur_null, 
+        boot_restrict = parallel_mixed_modelling(cur_null, 
             data.iloc[boot, :].reset_index(), est_scores[boot, :])
         print("full model")
-        boot_full, _ = parallel_mixed_modelling(model, 
+        boot_full = parallel_mixed_modelling(full_model, 
             data.iloc[boot, :].reset_index(), est_scores[boot, :])
-
+        print()
         boot_gllr = calculate_gllr(boot_full, boot_restrict)
         boot_gllrs.append(boot_gllr)
 
     boot_p = ( sum(boot_gllrs >= obs_gllr) + 1) / (bootstrap_n + 1)
     llf_collector[nm] = {"p-value": boot_p, 
                          "observed gllr": obs_gllr,
-                         "restricted model llr": [m.llr for m in h0_models]}
+                         "restricted model llr": [m.llf for m in h0_models]}
 
+#%% Back transpose PCA - interval
+cur_eff = np.array([mat["interval"].values for mat in effect_mats]).T
+weighted_scores = cur_eff.dot(pc)
+cur_pca = PCA(svd_solver='full').fit(weighted_scores)
+
+plt.plot(cur_pca.explained_variance_ratio_)
+plt.show()
+
+transpos_back_pca = cur_pca.components_[:1, :]
+plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
+plt.yticks(ticks=range(13),
+           labels=data.loc[:, labels].columns)
+plt.title("Principle components" + pca_varimax)
+plt.colorbar()
+plt.show()
+
+cur_scores = cur_pca.transform(weighted_scores)[:, :1]
 #%% Back transpose PCA - nback
 cur_eff = np.array([mat["C(nBack)[T.1]"].values for mat in effect_mats]).T
 weighted_scores = cur_eff.dot(pc)
