@@ -105,7 +105,7 @@ def bootstrap_limmpca(h1_models, null_models, full_model,
 
         boot_p = ( sum(boot_gllrs >= obs_gllr) + 1) / (bootstrap_n + 1)
         llf_collector[nm] = {"p-value": boot_p, 
-                            "observed gllr": obs_gllrs,
+                            "observed gllr": obs_gllr,
                             "null gllr": boot_gllrs, 
                             "restricted model llr": [m.llf for m in h0_models]}
     return llf_collector
