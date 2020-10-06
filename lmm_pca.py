@@ -5,16 +5,15 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 from scipy.stats import zscore
-from scipy import linalg
 
 import seaborn as sns 
 import matplotlib.pyplot as plt
 
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
-
-from util import (parallel_mixed_modelling, effect_matrix_decomposition, 
-                  variance_explained, correct_scale, bootstrap_effect)
+from limmpca.util import correct_scale
+from limmpca.mixedmodel import (parallel_mixed_modelling, 
+                                effect_matrix_decomposition,
+                                variance_explained,)
+from limmpca.bootstrap import bootstrap_limmpca
 
 #%% load data and basic clean up
 
@@ -30,7 +29,7 @@ data = data[data.IDNO < 500]
 
 # drop rows with no data
 data = data.dropna()
-data["group"] = 0  # nul model
+data["groups"] = 0  # nul model
 data["nBack"] = data["nBack"].astype(int)
 data["session"] = data["session"].astype(int)
 data["intervals"] = zscore(data["interval"])
@@ -88,7 +87,7 @@ for i in range(scores.shape[-1]):
 # i = 1, ...., m 
 # m is the number of componensts
 full_model = {
-    "formula": "~ 1 + C(nBack) + interval",  
+    "formula": "~ 1 + C(nBack) + interval + C(session)",  
     "groups": "RIDNO",
     "re_formula": "1",  # fit random intercept (1) and slope (C(nBack)) 
     "vcf": {"session": "0 + C(session)"}  # nested random effect
@@ -102,10 +101,10 @@ full_model = {
 #%% null model for significance testing
 null_models = {
     "nBack": {
-        "formula": "~ 1 + interval",
+        "formula": "~ 1 + interval + C(session)",
         "groups": "RIDNO",
         "re_formula": "1",
-        "vcf": {"session": "0 + C(session)"} 
+        "vcf": None 
         },
     "interval": {
         "formula": "~ 1 + C(nBack) + C(session)",
@@ -116,13 +115,13 @@ null_models = {
     "RIDNO": {
         "formula": "~ 1 + C(nBack) + interval + C(session)",
         "groups": "groups",
-        "re_formula": "1 + C(nBack) + interval",
+        "re_formula": "1",
         "vcf": None
         },
     "session": {
         "formula": "~ 1 + C(nBack) + interval",
         "groups": "RIDNO",
-        "re_formula": "1 + C(nBack) + interval",
+        "re_formula": "1",
         "vcf": None
         },
 }
@@ -152,8 +151,6 @@ plt.show()
 # plt.matshow(pc.T, cmap="RdBu_r")
 # plt.xticks(ticks=range(n_components), 
 #            labels=range(1, n_components + 1))
-# # plt.yticks(ticks=range(12),
-# #            labels=data.loc[:, 'MWQ_Future':'MWQ_Deliberate'].columns)
 # plt.yticks(ticks=range(13),
 #            labels=data.loc[:, labels].columns)
 # plt.title("Principle components" + pca_varimax)
@@ -162,151 +159,96 @@ plt.show()
 
 #%% bootstrapping
 bootstrap_n = 100
-# scikit-learn bootstrap
-from sklearn.utils import resample
-def calculate_gllr(h1_res, h0_res):
-    gllr = [h1_res[i].llf - h0_res[i].llf 
-                for i in range(len(h1_res))]
-    gllr = np.sum(gllr)
-    return 2 * gllr
+llf_collector = bootstrap_limmpca(h1_models, null_models, full_model, 
+                                  data, scores, bootstrap_n=3)
 
-boot_sample_size = data.shape[0]
+#%% visualise patterns explained
+# #%% Back transpose PCA - interval
+# cur_eff = np.array([mat["interval"].values for mat in effect_mats]).T
+# weighted_scores = cur_eff.dot(pc)
+# cur_pca = PCA(svd_solver='full').fit(weighted_scores)
 
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-llf_collector = {}
+# transpos_back_pca = cur_pca.components_[:1, :]
+# plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, labels].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
 
-#%% setup null
-for nm in null_models.keys():
-    print(nm)
-    print("set up null model")
-    # set up null model
-    cur_null = null_models[nm] 
-    h0_models = parallel_mixed_modelling(cur_null, data, scores)
+# cur_scores = cur_pca.transform(weighted_scores)[:, :1]
+# #%% Back transpose PCA - nback
+# cur_eff = np.array([mat["C(nBack)[T.1]"].values for mat in effect_mats]).T
+# weighted_scores = cur_eff.dot(pc)
+# cur_pca = PCA(svd_solver='full').fit(weighted_scores)
 
-    obs_effect = effect_matrix_decomposition(h0_models)
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-    obs_gllr = calculate_gllr(h1_models, h0_models)
+# transpos_back_pca = cur_pca.components_[:1, :]
+# plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, labels].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
 
-    # get sigma squared (variance) from redisuals and random factors
-    obs_nullify_ix = [c for c in obs_effect[0].columns if "random effect:" in c or "residuals" in c]
-    obs_sigma = [np.std(orv[obs_nullify_ix]) for orv in obs_effect]
-    obs_sigma = pd.concat(obs_sigma, axis=1)
-    obs_nullify_ix = [o.replace('random effect: ', '') for o in obs_nullify_ix]
-    obs_sigma.index = obs_nullify_ix
+# cur_scores = cur_pca.transform(weighted_scores)[:, :1]
 
-    # boot strapping
-    boot_gllrs = []
-    bn = 0
-    while len(boot_gllrs) < bootstrap_n:
-        bn += 1
-        print(f"Bootstrapping: {bn} / {bootstrap_n}")
-        boot = resample(range(boot_sample_size), replace=True, 
-                        n_samples=boot_sample_size)
-        
-        est_scores = bootstrap_effect(obs_sigma, boot_sample_size, h0_models)
-        sns.heatmap(np.corrcoef(est_scores.T, scores.T))
+# #%% Back transpose PCA - nback random intercept
+# eff = np.array([mat["random effect: \nsession"].values for mat in effect_mats]).T
+# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-        print("restricted model")
-        boot_restrict = parallel_mixed_modelling(cur_null, 
-            data.iloc[boot, :].reset_index(), est_scores[boot, :])
-        print("full model")
-        boot_full = parallel_mixed_modelling(full_model, 
-            data.iloc[boot, :].reset_index(), est_scores[boot, :])
-        print()
-        boot_gllr = calculate_gllr(boot_full, boot_restrict)
-        boot_gllrs.append(boot_gllr)
+# transpos_back_pca = cur_pca.components_.dot(pc)
+# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
+# #%% Back transpose PCA - sample
+# eff = np.array([mat["random effect: \nRIDNO"].values for mat in effect_mats]).T
+# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-    boot_p = ( sum(boot_gllrs >= obs_gllr) + 1) / (bootstrap_n + 1)
-    llf_collector[nm] = {"p-value": boot_p, 
-                         "observed gllr": obs_gllr,
-                         "restricted model llr": [m.llf for m in h0_models]}
+# transpos_back_pca = cur_pca.components_.dot(pc)
+# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
+# #%% Back transpose PCA - nback random intercept
+# eff = np.array([mat["random effect: \nC(nBack)[T.1]"].values for mat in effect_mats]).T
+# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-#%% Back transpose PCA - interval
-cur_eff = np.array([mat["interval"].values for mat in effect_mats]).T
-weighted_scores = cur_eff.dot(pc)
-cur_pca = PCA(svd_solver='full').fit(weighted_scores)
+# transpos_back_pca = cur_pca.components_.dot(pc)
+# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
 
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
+# #%% Back transpose PCA - residual
+# eff = np.array([mat["residual"].values for mat in effect_mats]).T
+# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
+# plt.plot(cur_pca.explained_variance_ratio_)
+# plt.show()
 
-transpos_back_pca = cur_pca.components_[:1, :]
-plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, labels].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-
-cur_scores = cur_pca.transform(weighted_scores)[:, :1]
-#%% Back transpose PCA - nback
-cur_eff = np.array([mat["C(nBack)[T.1]"].values for mat in effect_mats]).T
-weighted_scores = cur_eff.dot(pc)
-cur_pca = PCA(svd_solver='full').fit(weighted_scores)
-
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
-
-transpos_back_pca = cur_pca.components_[:1, :]
-plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, labels].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-
-cur_scores = cur_pca.transform(weighted_scores)[:, :1]
-
-#%% Back transpose PCA - nback random intercept
-eff = np.array([mat["random effect: \nsession"].values for mat in effect_mats]).T
-cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
-
-transpos_back_pca = cur_pca.components_.dot(pc)
-plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-#%% Back transpose PCA - sample
-eff = np.array([mat["random effect: \nRIDNO"].values for mat in effect_mats]).T
-cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
-
-transpos_back_pca = cur_pca.components_.dot(pc)
-plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-#%% Back transpose PCA - nback random intercept
-eff = np.array([mat["random effect: \nC(nBack)[T.1]"].values for mat in effect_mats]).T
-cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
-
-transpos_back_pca = cur_pca.components_.dot(pc)
-plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
-
-#%% Back transpose PCA - residual
-eff = np.array([mat["residual"].values for mat in effect_mats]).T
-cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-plt.plot(cur_pca.explained_variance_ratio_)
-plt.show()
-
-transpos_back_pca = cur_pca.components_.dot(pc)
-plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-plt.yticks(ticks=range(13),
-           labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-plt.title("Principle components" + pca_varimax)
-plt.colorbar()
-plt.show()
+# transpos_back_pca = cur_pca.components_.dot(pc)
+# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
+# plt.yticks(ticks=range(13),
+#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
+# plt.title("Principle components" + pca_varimax)
+# plt.colorbar()
+# plt.show()
 

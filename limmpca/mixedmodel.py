@@ -5,36 +5,6 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 
-def varimax(Phi, gamma = 1, q = 20, tol = 1e-6):
-    from numpy import eye, asarray, dot, sum, diag
-    from numpy.linalg import svd
-    p,k = Phi.shape
-    R = eye(k)
-    d=0
-    for i in range(q):
-        d_old = d
-        Lambda = dot(Phi, R)
-        u,s,vh = svd(dot(Phi.T,asarray(Lambda)**3 \
-        - (gamma/p) * dot(Lambda, diag(diag(dot(Lambda.T,Lambda))))))
-        R = dot(u,vh)
-        d = sum(s)
-        if d/d_old < tol: break
-    return dot(Phi, R)
-
-
-def correct_scale(data, labels):
-    # correct each subject by used scale range
-    for id in np.unique(data.RIDNO):
-        id_idx = data['RIDNO'].str.match(id)
-        cur = data[id_idx].loc[:, labels].values
-        scling = np.max(cur.flatten())
-        floor = np.min(cur.flatten())
-        cur = (cur - floor) / scling
-        # update
-        data[id_idx].loc[:, labels] = cur
-    return data
-
-
 def parallel_mixed_modelling(model, data, pca_scores):
 
     # add PC scores to the data frame
@@ -164,54 +134,3 @@ def variance_explained(effect_mats):
                                            value_name="variance(%)", 
                                            var_name="PC")
     return percent_var_exp
-
-
-def bootstrap_effect(obs_sigmasqr, boot_sample_size, h0_models):
-
-    def residuals(sigma, boot_sample_size): 
-        boot_resid = np.random.normal(0, sigma, boot_sample_size)
-        return boot_resid
-
-    def fixed_effects(results):
-        # fixed effect
-        fe_params = results.fe_params
-        mf = np.dot(results.model.exog, fe_params)
-        return mf
-
-    def random_effects(results, sigmas):
-        # random effects of the current factor
-        # this is a dictionary of data frames one entry per group
-        re = results.random_effects
-        mr = []
-        # for each group
-        for group_ix, group in enumerate(results.model.group_labels):
-            # get random structure design
-            ix = results.model.row_indices[group]
-            mat = []
-            if results.model.exog_re_li is not None:
-                mat.append(results.model.exog_re_li[group_ix])
-            for j in range(results.k_vc):
-                mat.append(results.model.exog_vc.mats[j][group_ix])
-            mat = np.concatenate(mat, axis=1)
-            rand_idx = [idx.replace('random effect: ', '') for idx in re[group].index]
-            null_ss = []
-            for j in rand_idx:
-                real_label = j.split("[")[0]
-                ss = sigmas[real_label]
-                null_ss.append(np.random.normal(0, ss))
-            mr.append(np.dot(mat, np.array(null_ss)))
-        mr = np.concatenate(mr)
-        return mr
-    
-    m_components = len(h0_models)
-    Y_ests = []
-    for i in range(m_components):
-        model = h0_models[i]
-        ss = obs_sigmasqr.loc["residuals", i]
-        Y_est = residuals(ss, boot_sample_size)
-        Y_est += fixed_effects(model) 
-        ss = obs_sigmasqr.loc[:, i]
-        Y_est += random_effects(model, ss)
-        Y_ests.append(Y_est)
-    Y_ests = np.array(Y_ests).T
-    return Y_ests
