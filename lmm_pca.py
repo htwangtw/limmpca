@@ -1,5 +1,6 @@
 #%% load libraries
 import pickle 
+from pathlib import Path
 
 import pandas as pd 
 import numpy as np 
@@ -24,7 +25,8 @@ n_components = 4
 pca_varimax = "; raw"
 varimax_on = False
 
-es_path = "data/task-nbackES_probes_trial_interval.tsv"
+project_path = Path.home() / "projects/lmmpca/"
+es_path = project_path / "data/task-nbackES_probes_trial_interval.tsv"
 data = pd.read_csv(es_path, sep="\t")
 # use the first cohort
 data = data[data.IDNO < 500]
@@ -171,7 +173,7 @@ llf_collector = bootstrap_limmpca(h1_models, models,
 
 #%% save results
 try: 
-	llf_file = open('results/llf_bootstrap_results.pkl', 'wb') 
+	llf_file = open(project_path / 'results/llf_bootstrap_results.pkl', 'wb') 
 	pickle.dump(llf_collector, llf_file) 
 	llf_file.close() 
 
