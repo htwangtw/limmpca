@@ -1,4 +1,6 @@
 #%% load libraries
+import pickle 
+
 import pandas as pd 
 import numpy as np 
 
@@ -18,7 +20,7 @@ from limmpca.bootstrap import bootstrap_limmpca
 #%% load data and basic clean up
 
 # use the top three for dev
-n_components = 6
+n_components = 4
 pca_varimax = "; raw"
 varimax_on = False
 
@@ -35,23 +37,32 @@ data["session"] = data["session"].astype(int)
 data["intervals"] = zscore(data["interval"])
 
 # normalise the scale to 0 -1 based on scale range used per individual
-labels = [c for c in data.columns if "MWQ" in c]
+# labels = [c for c in data.columns if "MWQ" in c]
+# I would like to have the labels ordered as follow.
+labels = ['MWQ_Focus','MWQ_Future','MWQ_Past','MWQ_Self','MWQ_Other', 
+          'MWQ_Emotion','MWQ_Words', 'MWQ_Images',
+          'MWQ_Deliberate','MWQ_Detailed','MWQ_Evolving','MWQ_Habit','MWQ_Vivid',]
 data = correct_scale(data, labels)
 data = data.reset_index(drop=True)
 #%% naive PCA
 
 # SPSS PCA was performed on correlation matrix 
 # so we z-score the input data
-X = data.loc[:, labels].values
 # X = data.loc[:, 'MWQ_Future':'MWQ_Deliberate'].values
+# labels = labels
+X = data.loc[:, labels].values
 Xz = zscore(X)
 
 pca = PCA(svd_solver='full').fit(Xz)
 #%% scree plot
 plt.figure()
-plt.plot(np.cumsum(pca.explained_variance_ratio_) * 100, "-o")
+plt.plot(pca.explained_variance_ratio_ * 100, "-o")
 plt.xticks(ticks=range(13),
            labels=range(1, 14))
+plt.ylabel("explained variance (%)")
+plt.title("Scree plot")
+
+plt.show()
 #%%
 # calculate principle component scores
 if n_components:
@@ -63,10 +74,19 @@ else:
     n_components = pc.shape[0]
 
 if varimax_on:
-    from util import varimax
+    from limmpca.util import varimax
     pc = varimax(pc.T).T
     scores = np.dot(Xz, pc.T)
     pca_varimax = "; varimax"
+
+plt.matshow(pc.T, cmap="RdBu_r", vmax=0.7, vmin=-0.7)
+plt.xticks(ticks=range(n_components), 
+           labels=range(1, n_components + 1))
+plt.yticks(ticks=range(len(labels)),
+           labels=labels)
+plt.title("Principle components" + pca_varimax)
+plt.colorbar()
+plt.show()
 
 pca_res = data.loc[:,:].copy()
 m_components = scores.shape[-1]
@@ -83,43 +103,37 @@ for i in range(scores.shape[-1]):
 
 # define model
 # this nested model can be recreated in R as follow
-# lmer(factor_i ~  1 + C(nBack) + (1 + C(nBack)|C(RIDNO)/C(session)), data=data) 
+# lmer(factor_i ~  1 + C(nBack) * interval 
+#      + (1 + interval|C(RIDNO)/C(session)), data=data) 
 # i = 1, ...., m 
 # m is the number of componensts
-full_model = {
-    "formula": "~ 1 + C(nBack) + interval + C(session)",  
-    "groups": "RIDNO",
-    "re_formula": "1",  # fit random intercept (1) and slope (C(nBack)) 
-    "vcf": {"session": "0 + C(session)"}  # nested random effect
-}
-# full_model = {
-#     "formula": "~ 1 + C(nBack) + interval + corr",  
-#     "groups": "RIDNO",
-#     "re_formula": "1 + C(nBack) + interval + corr",  # fit random intercept (1) and slope (C(nBack)) 
-#     "vcf": {"session": "0 + C(session)"}  # nested random effect
-# }
-#%% null model for significance testing
-null_models = {
-    "nBack": {
-        "formula": "~ 1 + interval + C(session)",
+models = {
+    "full_model": {
+        "formula": "~ 1 + C(nBack) * interval",  
         "groups": "RIDNO",
-        "re_formula": "1",
-        "vcf": None 
+        "re_formula": "1", 
+        "vcf": {"session": "0 + C(session)"} 
+        },
+    "nBack": {
+        "formula": "~ 1 + C(nBack)",  
+        "groups": "RIDNO",
+        "re_formula": "1",   
+        "vcf": {"session": "0 + C(session)"}
         },
     "interval": {
-        "formula": "~ 1 + C(nBack) + C(session)",
+        "formula": "~ 1 + interval",  
         "groups": "RIDNO",
-        "re_formula": "1",
-        "vcf": None
+        "re_formula": "1", 
+        "vcf": {"session": "0 + C(session)"}
         },
     "RIDNO": {
-        "formula": "~ 1 + C(nBack) + interval + C(session)",
+        "formula": "~ 1 + C(nBack) * interval",
         "groups": "groups",
         "re_formula": "1",
-        "vcf": None
+        "vcf": {"session": "0 + C(session)"}
         },
     "session": {
-        "formula": "~ 1 + C(nBack) + interval",
+        "formula": "~ 1 + C(nBack) * interval",
         "groups": "RIDNO",
         "re_formula": "1",
         "vcf": None
@@ -127,7 +141,7 @@ null_models = {
 }
 
 #%% run true model
-h1_models = parallel_mixed_modelling(full_model, data, scores)
+h1_models = parallel_mixed_modelling(models["full_model"], data, scores)
 
 # effect matrix decomposition
 # rewrite the LMM as effect matrix decomposition
@@ -135,11 +149,13 @@ effect_mats = effect_matrix_decomposition(h1_models)
 
 # percentage of variance explained by variable
 percent_var_exp = variance_explained(effect_mats)
-
+#%%
+sns.color_palette("tab10")
 # plot results so far
 chart = sns.barplot(x="Effect", y="variance(%)", 
                     hue="PC", data=percent_var_exp
                     )
+# chart.set_ylim(0, 1)
 chart.set_xticklabels(
     chart.get_xticklabels(), 
     rotation=45, 
@@ -148,19 +164,19 @@ chart.set_xticklabels(
 plt.title("Variance of components" + pca_varimax)
 plt.show()
 
-# plt.matshow(pc.T, cmap="RdBu_r")
-# plt.xticks(ticks=range(n_components), 
-#            labels=range(1, n_components + 1))
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, labels].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-
 #%% bootstrapping
 bootstrap_n = 100
-llf_collector = bootstrap_limmpca(h1_models, null_models, full_model, 
+llf_collector = bootstrap_limmpca(h1_models, models, 
                                   data, scores, bootstrap_n=3)
+
+#%% save results
+try: 
+	llf_file = open('results/llf_bootstrap_results.pkl', 'wb') 
+	pickle.dump(llf_collector, llf_file) 
+	llf_file.close() 
+
+except: 
+	print("Something went wrong")
 
 #%% visualise patterns explained
 # #%% Back transpose PCA - interval

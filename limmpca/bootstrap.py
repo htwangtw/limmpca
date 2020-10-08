@@ -61,16 +61,17 @@ def calculate_gllr(h1_res, h0_res):
     gllr = np.sum(gllr)
     return 2 * gllr
 
-def bootstrap_limmpca(h1_models, null_models, full_model, 
+def bootstrap_limmpca(h1_models, models, 
                       data, scores, bootstrap_n=1000):
 
     boot_sample_size = data.shape[0]
     llf_collector = {}
-    for nm in null_models.keys():
-        print(nm)
-        print("set up null model")
+    reduced_models = list(models.keys())
+    reduced_models.remove("full_model")
+    for nm in reduced_models:
+        print(f"set up null model {nm}")
         # set up null model
-        cur_null = null_models[nm] 
+        cur_null = models[nm] 
         h0_models = parallel_mixed_modelling(cur_null, data, scores)
 
         obs_effect = effect_matrix_decomposition(h0_models)
@@ -97,7 +98,7 @@ def bootstrap_limmpca(h1_models, null_models, full_model,
             boot_restrict = parallel_mixed_modelling(cur_null, 
                 data.iloc[boot, :].reset_index(), est_scores[boot, :])
             print("full model")
-            boot_full = parallel_mixed_modelling(full_model, 
+            boot_full = parallel_mixed_modelling(models["full_model"], 
                 data.iloc[boot, :].reset_index(), est_scores[boot, :])
 
             boot_gllr = calculate_gllr(boot_full, boot_restrict)
@@ -105,7 +106,7 @@ def bootstrap_limmpca(h1_models, null_models, full_model,
 
         boot_p = ( sum(boot_gllrs >= obs_gllr) + 1) / (bootstrap_n + 1)
         llf_collector[nm] = {"p-value": boot_p, 
-                            "observed gllr": obs_gllr,
-                            "null gllr": boot_gllrs, 
-                            "restricted model llr": [m.llf for m in h0_models]}
+                             "observed global llr": obs_gllr,
+                             "bootstrap global llr": boot_gllrs, 
+                             "restricted models llr": [m.llf for m in h0_models]}
     return llf_collector

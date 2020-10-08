@@ -22,7 +22,7 @@ def parallel_mixed_modelling(model, data, pca_scores):
                             re_formula=model["re_formula"],
                             vc_formula=model["vcf"])
         # fit the model
-        mixed_fit = mixed.fit()
+        mixed_fit = mixed.fit(reml=True, method='cg')
         # print(mixed_fit.summary())
         # save fitted model
         fitted_models.append(mixed_fit)
@@ -79,7 +79,6 @@ def effect_matrix_decomposition(fitted_models):
                 # concatenate current subject's variance 
                 # to the data
                 if not mr[colname].any():
-                    print("first sub")
                     mr[colname] = mr_j
                 else:
                     mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
