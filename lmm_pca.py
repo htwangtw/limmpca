@@ -25,7 +25,7 @@ n_components = 4
 pca_varimax = "; raw"
 varimax_on = False
 
-project_path = Path.home() / "projects/lmmpca/"
+project_path = Path.home() / "projects/lmm_pca/"
 es_path = project_path / "data/task-nbackES_probes_trial_interval.tsv"
 data = pd.read_csv(es_path, sep="\t")
 # use the first cohort
