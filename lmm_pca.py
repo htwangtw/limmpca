@@ -1,19 +1,19 @@
 #%% load libraries
-import pickle 
+import pickle
 from pathlib import Path
 
-import pandas as pd 
-import numpy as np 
+import pandas as pd
+import numpy as np
 
 from sklearn.decomposition import PCA
 
 from scipy.stats import zscore
 
-import seaborn as sns 
+import seaborn as sns
 import matplotlib.pyplot as plt
 
 from limmpca.util import correct_scale
-from limmpca.mixedmodel import (parallel_mixed_modelling, 
+from limmpca.mixedmodel import (parallel_mixed_modelling,
                                 effect_matrix_decomposition,
                                 variance_explained,)
 from limmpca.bootstrap import bootstrap_limmpca
@@ -24,6 +24,8 @@ from limmpca.bootstrap import bootstrap_limmpca
 n_components = 4
 pca_varimax = "; raw"
 varimax_on = False
+bootstrap_n = 2000
+
 
 project_path = Path.home() / "projects/lmm_pca/"
 es_path = project_path / "data/task-nbackES_probes_trial_interval.tsv"
@@ -41,14 +43,14 @@ data["intervals"] = zscore(data["interval"])
 # normalise the scale to 0 -1 based on scale range used per individual
 # labels = [c for c in data.columns if "MWQ" in c]
 # I would like to have the labels ordered as follow.
-labels = ['MWQ_Focus','MWQ_Future','MWQ_Past','MWQ_Self','MWQ_Other', 
+labels = ['MWQ_Focus','MWQ_Future','MWQ_Past','MWQ_Self','MWQ_Other',
           'MWQ_Emotion','MWQ_Words', 'MWQ_Images',
           'MWQ_Deliberate','MWQ_Detailed','MWQ_Evolving','MWQ_Habit','MWQ_Vivid',]
 data = correct_scale(data, labels)
 data = data.reset_index(drop=True)
 #%% naive PCA
 
-# SPSS PCA was performed on correlation matrix 
+# SPSS PCA was performed on correlation matrix
 # so we z-score the input data
 # X = data.loc[:, 'MWQ_Future':'MWQ_Deliberate'].values
 # labels = labels
@@ -72,7 +74,7 @@ if n_components:
     pc = pca.components_[:n_components, :]
 else:
     scores = pca.transform(Xz)
-    pc = pca.components_ 
+    pc = pca.components_
     n_components = pc.shape[0]
 
 if varimax_on:
@@ -82,7 +84,7 @@ if varimax_on:
     pca_varimax = "; varimax"
 
 plt.matshow(pc.T, cmap="RdBu_r", vmax=0.7, vmin=-0.7)
-plt.xticks(ticks=range(n_components), 
+plt.xticks(ticks=range(n_components),
            labels=range(1, n_components + 1))
 plt.yticks(ticks=range(len(labels)),
            labels=labels)
@@ -96,36 +98,36 @@ for i in range(scores.shape[-1]):
     pca_res[f"factor_{i + 1}"] = scores[:, i]
 #%%
 # plt.figure()
-# sns.scatterplot("factor_2", "factor_4", 
+# sns.scatterplot("factor_2", "factor_4",
 #                 data=pca_res.loc[:90,:], hue="nBack")
 # plt.figure()
-# sns.scatterplot("factor_2", "factor_1", 
+# sns.scatterplot("factor_2", "factor_1",
 #                 data=pca_res.loc[:90,:], hue="RIDNO")
 #%% parallel mixed modelling - formula method
 
 # define model
 # this nested model can be recreated in R as follow
-# lmer(factor_i ~  1 + C(nBack) * interval 
-#      + (1 + interval|C(RIDNO)/C(session)), data=data) 
-# i = 1, ...., m 
+# lmer(factor_i ~  1 + C(nBack) * interval
+#      + (1 + interval|C(RIDNO)/C(session)), data=data)
+# i = 1, ...., m
 # m is the number of componensts
 models = {
     "full_model": {
-        "formula": "~ 1 + C(nBack) * interval",  
+        "formula": "~ 1 + C(nBack) * interval",
         "groups": "RIDNO",
-        "re_formula": "1", 
-        "vcf": {"session": "0 + C(session)"} 
+        "re_formula": "1",
+        "vcf": {"session": "0 + C(session)"}
         },
     "nBack": {
-        "formula": "~ 1 + C(nBack)",  
+        "formula": "~ 1 + C(nBack)",
         "groups": "RIDNO",
-        "re_formula": "1",   
+        "re_formula": "1",
         "vcf": {"session": "0 + C(session)"}
         },
     "interval": {
-        "formula": "~ 1 + interval",  
+        "formula": "~ 1 + interval",
         "groups": "RIDNO",
-        "re_formula": "1", 
+        "re_formula": "1",
         "vcf": {"session": "0 + C(session)"}
         },
     "RIDNO": {
@@ -154,30 +156,29 @@ percent_var_exp = variance_explained(effect_mats)
 #%%
 sns.color_palette("tab10")
 # plot results so far
-chart = sns.barplot(x="Effect", y="variance(%)", 
+chart = sns.barplot(x="Effect", y="variance(%)",
                     hue="PC", data=percent_var_exp
                     )
 # chart.set_ylim(0, 1)
 chart.set_xticklabels(
-    chart.get_xticklabels(), 
-    rotation=45, 
+    chart.get_xticklabels(),
+    rotation=45,
     horizontalalignment='right',
 )
 plt.title("Variance of components" + pca_varimax)
 plt.show()
 
 #%% bootstrapping
-bootstrap_n = 100
-llf_collector = bootstrap_limmpca(h1_models, models, 
-                                  data, scores, bootstrap_n=3)
+llf_collector = bootstrap_limmpca(h1_models, models,
+                                  data, scores, bootstrap_n)
 
 #%% save results
-try: 
-	llf_file = open(project_path / 'results/llf_bootstrap_results.pkl', 'wb') 
-	pickle.dump(llf_collector, llf_file) 
-	llf_file.close() 
+try:
+	llf_file = open(project_path / 'results/llf_bootstrap_results.pkl', 'wb')
+	pickle.dump(llf_collector, llf_file)
+	llf_file.close()
 
-except: 
+except:
 	print("Something went wrong")
 
 #%% visualise patterns explained
