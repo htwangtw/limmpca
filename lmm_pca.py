@@ -26,6 +26,8 @@ pca_varimax = "; raw"
 varimax_on = False
 bootstrap_n = 2000
 
+# set random seed
+np.random.seed(42)
 
 project_path = Path.home() / "projects/lmm_pca/"
 es_path = project_path / "data/task-nbackES_probes_trial_interval.tsv"
