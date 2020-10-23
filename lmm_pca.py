@@ -21,7 +21,7 @@ from limmpca.bootstrap import bootstrap_limmpca
 #%% load data and basic clean up
 
 # use the top three for dev
-n_components = 4
+n_components = 13
 pca_varimax = "; raw"
 varimax_on = False
 bootstrap_n = 2000
@@ -121,13 +121,19 @@ models = {
         "vcf": {"session": "0 + C(session)"}
         },
     "nBack": {
-        "formula": "~ 1 + C(nBack)",
+        "formula": "~ 1 + C(nBack) + C(nBack) : interval",
         "groups": "RIDNO",
         "re_formula": "1",
         "vcf": {"session": "0 + C(session)"}
         },
     "interval": {
-        "formula": "~ 1 + interval",
+        "formula": "~ 1 + interval + C(nBack) : interval",
+        "groups": "RIDNO",
+        "re_formula": "1",
+        "vcf": {"session": "0 + C(session)"}
+        },
+    "nBack x interval": {
+        "formula": "~ 1  + C(nBack) + interval",
         "groups": "RIDNO",
         "re_formula": "1",
         "vcf": {"session": "0 + C(session)"}
@@ -183,6 +189,36 @@ try:
 except:
 	print("Something went wrong")
 
+#%% load bootstrap results
+llf_file = open(project_path / 'results/llf_bootstrap_results.pkl', 'rb')
+llf_collector = pickle.load(llf_file)
+llf_file.close()
+#%% visualise bootstrap results
+
+restricted_llr = []
+true_llf = [m.llf for m in h1_models]
+for k in llf_collector.keys():
+    boot_llr = llf_collector[k]["bootstrap global llr"]
+    p_value = llf_collector[k]["p-value"]
+    obs_llf = llf_collector[k]["observed global llr"]
+    rest_llf = llf_collector[k]["restricted models llr"]
+    plt.figure()
+    dist = sns.distplot(boot_llr, kde=False)
+    plt.title(k)
+    plt.vlines(obs_llf, 0, dist.get_ylim()[-1] + 5,
+               linestyles="--")
+    plt.savefig(project_path / f'results/bootstrap_{k}.png')
+
+    df = pd.DataFrame({"(R)LLR": 2 * (np.array(true_llf) - np.array(rest_llf)),
+                       "Removed factor": [k] * 13,
+                       "Principle component": list(range(1, 14))})
+
+    restricted_llr.append(df)
+
+restricted_llr = pd.concat(restricted_llr)
+rllr_plot = sns.catplot(x="Principle component", y="(R)LLR", hue="Removed factor",
+            data=restricted_llr, kind="bar")
+rllr_plot.savefig(project_path / 'results/rllr.png')
 #%% visualise patterns explained
 # #%% Back transpose PCA - interval
 # cur_eff = np.array([mat["interval"].values for mat in effect_mats]).T
