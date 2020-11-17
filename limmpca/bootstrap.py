@@ -61,6 +61,10 @@ def calculate_gllr(h1_res, h0_res):
     gllr = np.sum(gllr) * 2
     return gllr
 
+
+# def fit_null_model(model, exp_design, pca_scores):
+
+
 def bootstrap_limmpca(h1_models, models,
                       data, scores, bootstrap_n=1000):
 
@@ -77,13 +81,16 @@ def bootstrap_limmpca(h1_models, models,
         obs_effect = effect_matrix_decomposition(h0_models)
 
         obs_gllr = calculate_gllr(h1_models, h0_models)
+        print(f"true gllr: {obs_gllr}")
 
         # get sigma squared (variance) from redisuals and random factors
         obs_nullify_ix = [c for c in obs_effect[0].columns if "random effect:" in c or "residuals" in c]
-        obs_sigma = [np.var(orv[obs_nullify_ix]) for orv in obs_effect]
+        # obs_sigma = [np.var(orv[obs_nullify_ix]) for orv in obs_effect]
+        obs_sigma = [np.std(orv[obs_nullify_ix]) for orv in obs_effect]
         obs_sigma = pd.concat(obs_sigma, axis=1)
         obs_nullify_ix = [o.replace('random effect: ', '') for o in obs_nullify_ix]
         obs_sigma.index = obs_nullify_ix
+        print(obs_sigma.round(3))
 
         # boot strapping
         boot_gllrs = []
@@ -103,6 +110,7 @@ def bootstrap_limmpca(h1_models, models,
 
             boot_gllr = calculate_gllr(boot_full, boot_restrict)
             boot_gllrs.append(boot_gllr)
+            print(f"bootstrap gllr: {obs_gllr}")
 
         boot_p = ( sum(boot_gllrs >= obs_gllr) + 1) / (bootstrap_n + 1)
         llf_collector[nm] = {"p-value": boot_p,
