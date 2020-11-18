@@ -1,5 +1,6 @@
-import pandas as pd 
-import numpy as np 
+import pandas as pd
+import numpy as np
+
 
 
 def varimax(Phi, gamma = 1, q = 20, tol = 1e-6):
@@ -17,7 +18,6 @@ def varimax(Phi, gamma = 1, q = 20, tol = 1e-6):
         d = sum(s)
         if d/d_old < tol: break
     return dot(Phi, R)
-
 
 def correct_scale(data, labels):
     # correct each subject by used scale range

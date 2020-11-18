@@ -13,10 +13,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from limmpca.util import correct_scale
-from limmpca.mixedmodel import (parallel_mixed_modelling,
-                                effect_matrix_decomposition,
-                                variance_explained, combine_data)
-from limmpca.bootstrap import bootstrap_limmpca
+from limmpca.model import ParallelMixedModel
 
 #%% load data and basic clean up
 
@@ -80,7 +77,6 @@ if varimax_on:
     pca_varimax = "; varimax"
 
 m_components = scores.shape[-1]
-data = combine_data(exp_design, scores)
 
 #%% scree plot
 plt.figure()
@@ -152,14 +148,9 @@ models = {
 }
 
 #%% run true model
-h1_models = parallel_mixed_modelling(models["full_model"], exp_design, scores)
+h1_models = ParallelMixedModel(models["full_model"])
+h1_models.fit(exp_design, scores)
 
-# effect matrix decomposition
-# rewrite the LMM as effect matrix decomposition
-effect_mats = effect_matrix_decomposition(h1_models)
-
-# percentage of variance explained by variable
-percent_var_exp = variance_explained(effect_mats)
 #%%
 sns.color_palette("tab10")
 # plot results so far
