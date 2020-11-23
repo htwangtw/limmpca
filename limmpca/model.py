@@ -11,9 +11,43 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
+# To Do: isolate the effect matrix decomposition part
+# create an abstract class for PMM for different behaviours of the same function
+# during model fitting and bootstrapping?
+
+# class pmm(ABC):
+#     def fit(X, Y):
+#       pass
+
+
 class ParallelMixedModel:
+    '''
+    Linear mixed model step in LiMM-PCA.
+
+    Attributes
+    ----------
+    model: dict
+        a dictionary containing set up for statsmodel formulat for
+        mixedml
+        must contain following keys:
+        - formula:
+            The patsy style formula of the fixed effect
+        - groups:
+            random effect groups
+            random effect passed to mixedml input of the same name
+        - re_formula: random intercept/coefficient of "groups"
+            default to random intercept model
+        - vc_formula: variance componment formula for knested effect;
+            set to None if not needed
+
+    Methods
+    -------
+    fit(X, Y)
+        fit LMM on the PCA results with the specified model
+    '''
+
     def __init__(self, model):
-        self.model = model
+        self.model = model  # TODO: check dictionary kes
         self.fittedmodels = []
         self.effectmat = []
         self.llf = []
@@ -29,7 +63,7 @@ class ParallelMixedModel:
                                 data,
                                 groups=self.model["groups"],
                                 re_formula=self.model["re_formula"],
-                                vc_formula=self.model["vcf"])
+                                vc_formula=self.model["vc_formula"])
             # fit the model
             fitted_model = mixed.fit(reml=True, method='cg')
 

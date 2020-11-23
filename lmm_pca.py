@@ -126,24 +126,24 @@ models = {
     "full_model": {'formula': '~ 1 + C(nBack) + interval',
     'groups': 'RIDNO',
     're_formula': '1 ',
-    'vcf': None},
+    'vc_formula': None},
     "nBack": {
         "formula": "~ 1+ interval",
         "groups": "RIDNO",
         "re_formula": "1",
-        "vcf": None
+        "vc_formula": None
         },
     "interval": {
         "formula": "~ 1 + C(nBack)",
         "groups": "RIDNO",
         "re_formula": "1",
-        "vcf": None
+        "vc_formula": None
         },
     "RIDNO": {
         "formula": "~ 1 + C(nBack) + interval",
         "groups": "groups",
         "re_formula": "1",
-        "vcf": None
+        "vc_formula": None
         },
 }
 
