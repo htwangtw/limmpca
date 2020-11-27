@@ -19,9 +19,8 @@ models = {"cand1": {'formula': '~ 1 + C(nBack) + interval',
     're_formula': '1',
     'vcf': {'session': '0 + C(session)'}},
     }
-for key in models.keys():
-    model = models[key]
-    i = 1
+i = 1
+for key, model in models.items():
     formula = f"factor_{i}"  + model["formula"]
 
     mlm = smf.mixedlm(formula,
