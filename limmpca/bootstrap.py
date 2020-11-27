@@ -8,14 +8,12 @@ from .mixedmodel import parallel_mixed_modelling, effect_matrix_decomposition
 def bootstrap_effect(obs_sigmasqr, boot_sample_size, h0_models):
 
     def residuals(sigma, boot_sample_size):
-        boot_resid = np.random.normal(0, sigma, boot_sample_size)
-        return boot_resid
+        return np.random.normal(0, sigma, boot_sample_size)
 
     def fixed_effects(results):
         # fixed effect
         fe_params = results.fe_params
-        mf = np.dot(results.model.exog, fe_params)
-        return mf
+        return np.dot(results.model.exog, fe_params)
 
     def random_effects(results, sigmas):
         # random effects of the current factor
