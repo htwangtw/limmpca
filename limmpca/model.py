@@ -186,8 +186,7 @@ class ParallelMixedModel:
             # random coefficients or structure with one level only
             remained_labels = re[group][~re[group].index.isin(levels)]
             mr = get_random_coeff(mr, mat, remained_labels)
-        mr = pd.DataFrame(mr)
-        return mr
+        return pd.DataFrame(mr)
 
     @staticmethod
     def variance_explained(effect_mats):
