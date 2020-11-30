@@ -4,6 +4,7 @@ to data used in Turnbull et al 2019 NIMG with some added info:
 1. Previous trial type
 2. correct / incorrect
 """
+
 #%% setup
 import re
 from datetime import datetime
@@ -17,6 +18,7 @@ id_ref = master[["IDNO", "RNO"]]
 path_data = Path("data/original/")
 #%% add RIDNO
 subject_logs = []
+date_pattern = "%Y_%b_%d_%H%M"
 # rename files and add session info, R number
 for _, subject in id_ref.iterrows():
     ref_idno, ref_rno = subject["IDNO"], subject["RNO"]
@@ -27,7 +29,6 @@ for _, subject in id_ref.iterrows():
     dates_list = [re.search(
                   r"\d{4}_[a-zA-Z]{3}_\d{2}_\d{4}", f.name)[0] 
                   for f in files]
-    date_pattern = "%Y_%b_%d_%H%M"
     dates_list = sorted((datetime.strptime(d, date_pattern) \
                          for d in dates_list))
 
@@ -40,7 +41,7 @@ for _, subject in id_ref.iterrows():
         new_log = pd.read_csv(f[0])
         if ref_idno < 500:  # the first cohort
             new_log = pd.read_csv(f[0], index_col=0)
-        
+
         new_log["RIDNO"] = ref_rno
         new_log["Session"] = i + 1
         new_log = new_log.replace("Spontaneous", "Deliberate") # first cohort
@@ -75,7 +76,7 @@ for cur in subject_logs:
         while stim == "NT" and stim_i != 0: 
             stim_i -= 1
             stim = cur.loc[stim_i, "stimType"]
-        
+
             start_stim = cur.loc[stim_i, "fixStart"] \
                       + cur.loc[stim_i, "fixT"]
             if stim == "MWQ":
