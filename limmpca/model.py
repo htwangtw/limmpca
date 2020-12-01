@@ -1,23 +1,10 @@
 import pandas as pd
 import numpy as np
 
-import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from statsmodels.stats.anova import anova_lm
-
-from patsy import dmatrices
 
 import seaborn as sns
 import matplotlib.pyplot as plt
-
-
-# To Do: isolate the effect matrix decomposition part
-# create an abstract class for PMM for different behaviours of the same function
-# during model fitting and bootstrapping?
-
-# class pmm(ABC):
-#     def fit(X, Y):
-#       pass
 
 
 class ParallelMixedModel:
