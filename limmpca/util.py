@@ -2,22 +2,22 @@ import pandas as pd
 import numpy as np
 
 
-
-def varimax(Phi, gamma = 1, q = 20, tol = 1e-6):
-    from numpy import eye, asarray, dot, sum, diag
-    from numpy.linalg import svd
-    p,k = Phi.shape
-    R = eye(k)
-    d=0
+def varimax(Phi, gamma=1, q=20, tol=1e-6):
+    p, k = Phi.shape
+    R = np.eye(k)
+    d = 0
     for _ in range(q):
         d_old = d
-        Lambda = dot(Phi, R)
-        u,s,vh = svd(dot(Phi.T,asarray(Lambda)**3 \
-        - (gamma/p) * dot(Lambda, diag(diag(dot(Lambda.T,Lambda))))))
-        R = dot(u,vh)
-        d = sum(s)
+        Lambda = np.dot(Phi, R)
+        rot_tmp = np.diag(np.diag(np.dot(Lambda.T,Lambda)))
+        lam_rotate = np.dot(Lambda, rot_tmp)
+        mat = np.asarray(Lambda)**3 - (gamma / p) * lam_rotate
+        mat = np.dot(Phi.T, tmp)
+        u, s, vh = np.linalg.svd(mat)
+        R = np.dot(u, vh)
+        d = np.sum(s)
         if d/d_old < tol: break
-    return dot(Phi, R)
+    return np.dot(Phi, R)
 
 def correct_scale(data, labels):
     # correct each subject by used scale range

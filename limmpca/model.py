@@ -110,61 +110,6 @@ class ParallelMixedModel:
         return mf
 
     @staticmethod
-    def get_random_structure(group_ix, k_vc, exog_vc_mat, exog_re_li):
-        mat = []
-        if fitted_model.model.exog_re_li is not None:
-            mat.append(fitted_model.model.exog_re_li[group_ix])
-        for j in range(k_vc):
-            mat.append(exog_vc_mat[j][group_ix])
-        return np.concatenate(mat, axis=1)
-
-    @staticmethod
-    def get_nested_structure(mr, mat, re_group, exog_vc_names):
-        # handle random structure of multiple level
-        # this loop would be ignored if no nested structure was modeled
-        levels = []
-        for vc in exog_vc_names:
-            colname = f"random effect: {vc}"
-            # get all columns related to this random structure
-            vc_labels = [r for r in re_group.index if vc in r]
-            levels += vc_labels
-
-            coef = re_group[vc_labels]
-            tau = mat[vc_labels]
-            mr_j = np.dot(tau, coef)
-            # create an entry in dict if not present
-            try:
-                mr[colname]
-            except KeyError:
-                mr[colname] = np.array([])
-            # concatenate current subject's variance
-            # to the data
-            if not mr[colname].any():
-                mr[colname] = mr_j
-            else:
-                mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
-        return levels, mr
-
-    @staticmethod
-    def get_random_coeff(mr, mat, remained_labels):
-        for re_name, coef in remained_labels.iteritems():
-            colname = f"random effect: {re_name}"
-            tau = mat[re_name]
-            mr_j = np.dot(tau, coef)
-            # create an entry in dict if not present
-            try:
-                mr[colname]
-            except KeyError:
-                mr[colname] = np.array([])
-            # concatenate current subject's variance
-            # to the data
-            if not mr[colname].any():
-                mr[colname] = mr_j
-            else:
-                mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
-        return mr
-
-    @staticmethod
     def random_effects(fitted_model):
         # random effects of the current factor
         # this is a dictionary of data frames one entry per group
@@ -205,3 +150,56 @@ class ParallelMixedModel:
                     )
         plt.show()
         return percent_var_exp
+
+
+def get_random_structure(group_ix, k_vc, exog_vc_mat, exog_re_li):
+    mat = []
+    if exog_re_li is not None:
+        mat.append(exog_re_li[group_ix])
+    for j in range(k_vc):
+        mat.append(exog_vc_mat[j][group_ix])
+    return np.concatenate(mat, axis=1)
+
+def get_nested_structure(mr, mat, re_group, exog_vc_names):
+    # handle random structure of multiple level
+    # this loop would be ignored if no nested structure was modeled
+    levels = []
+    for vc in exog_vc_names:
+        colname = f"random effect: {vc}"
+        # get all columns related to this random structure
+        vc_labels = [r for r in re_group.index if vc in r]
+        levels += vc_labels
+
+        coef = re_group[vc_labels]
+        tau = mat[vc_labels]
+        mr_j = np.dot(tau, coef)
+        # create an entry in dict if not present
+        try:
+            mr[colname]
+        except KeyError:
+            mr[colname] = np.array([])
+        # concatenate current subject's variance
+        # to the data
+        if not mr[colname].any():
+            mr[colname] = mr_j
+        else:
+            mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
+    return levels, mr
+
+def get_random_coeff(mr, mat, remained_labels):
+    for re_name, coef in remained_labels.iteritems():
+        colname = f"random effect: {re_name}"
+        tau = mat[re_name]
+        mr_j = np.dot(tau, coef)
+        # create an entry in dict if not present
+        try:
+            mr[colname]
+        except KeyError:
+            mr[colname] = np.array([])
+        # concatenate current subject's variance
+        # to the data
+        if not mr[colname].any():
+            mr[colname] = mr_j
+        else:
+            mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
+    return mr
