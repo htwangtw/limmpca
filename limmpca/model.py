@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 
-import statsmodels.formula.api as smf
+import re
 
+import statsmodels.formula.api as smf
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -52,7 +53,7 @@ class ParallelMixedModel:
                                 re_formula=self.model["re_formula"],
                                 vc_formula=self.model["vc_formula"])
             # fit the model
-            fitted_model = mixed.fit(reml=True, method='cg')
+            fitted_model = mixed.fit(reml=True)
 
             # save fitted model
             self.fittedmodels.append(fitted_model)
@@ -87,12 +88,22 @@ class ParallelMixedModel:
     @staticmethod
     def fixed_effects(fitted_model):
         # fixed effect
+        category_var = r"C\(([A-Za-z0-9_]+)\)\[T.[0-9]+\]$"
         fe_params = fitted_model.fe_params
         mf = {}
+        cat = None
         for j, name in enumerate(fitted_model.model.exog_names):
             coef = fe_params[name]
             tau_fe = fitted_model.model.exog[:, j]
-            mf[name] = np.dot(coef, tau_fe)
+            cat_finder = re.search(category_var, name)
+            m = np.dot(coef, tau_fe)
+            if cat_finder is None:
+                mf[name] = m
+            elif cat == cat_finder.group(1):
+                mf[cat] += m
+            else:
+                cat = cat_finder.group(1)
+                mf[cat] = m
         mf = pd.DataFrame(mf)
         return mf
 
@@ -128,11 +139,12 @@ class ParallelMixedModel:
         est_var_full = np.sum(percent_var_exp.values)
         percent_var_exp /= est_var_full / 100
         percent_var_exp.columns = range(1, n_components + 1)
+        percent_var_exp = np.log1p(percent_var_exp)
         percent_var_exp["Effect"] = percent_var_exp.index
         percent_var_exp = percent_var_exp.melt(id_vars="Effect",
-                                            value_name="variance(%)",
+                                            value_name="log(variance %)",
                                             var_name="PC")
-        chart = sns.barplot(x="Effect", y="variance(%)",
+        chart = sns.barplot(x="Effect", y="log(variance %)",
                     hue="PC", data=percent_var_exp
                     )
         plt.show()

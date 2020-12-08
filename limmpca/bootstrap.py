@@ -3,17 +3,16 @@ import numpy as np
 
 from sklearn.utils import resample
 
-from .mixedmodel import parallel_mixed_modelling, effect_matrix_decomposition
+from .model import ParallelMixedModel
 
 def bootstrap_effect(obs_sigmasqr, boot_sample_size, h0_models):
 
     def residuals(sigma, boot_sample_size):
         return np.random.normal(0, sigma, boot_sample_size)
 
-    def fixed_effects(results):
+    def fixed_effects(exog, fe_params):
         # fixed effect
-        fe_params = results.fe_params
-        return np.dot(results.model.exog, fe_params)
+        return np.dot(exog, fe_params)
 
     def random_effects(results, sigmas):
         # random effects of the current factor
@@ -53,18 +52,27 @@ def bootstrap_effect(obs_sigmasqr, boot_sample_size, h0_models):
     Y_ests = np.array(Y_ests).T
     return Y_ests
 
-def calculate_gllr(h1_res, h0_res):
-    gllr = [h1_res[i].llf - h0_res[i].llf
-                for i in range(len(h1_res))]
+def calculate_gllr(h1_llf, h0_llf):
+    gllr = [h1_llf[i] - h0_llf[i]
+                for i in range(len(h1_llf))]
     gllr = np.sum(gllr) * 2
     return gllr
 
 
 # def fit_null_model(model, exp_design, pca_scores):
 
+def get_sigma_sqr(obs_effect):
+        # get sigma squared (variance) from redisuals and random factors
+        obs_nullify_ix = [c for c in obs_effect[0].columns if "random effect:" in c or "residuals" in c]
+        # obs_sigma = [np.var(orv[obs_nullify_ix]) for orv in obs_effect]
+        obs_sigma = [np.std(orv[obs_nullify_ix]) for orv in obs_effect]
+        obs_sigma = pd.concat(obs_sigma, axis=1)
+        obs_nullify_ix = [o.replace('random effect: ', '') for o in obs_nullify_ix]
+        obs_sigma.index = obs_nullify_ix
+        return obs_sigma
 
-def bootstrap_limmpca(h1_models, models,
-                      data, scores, bootstrap_n=1000):
+def bootstrap_limmpca(h1_llf, models,
+                      exp_design, scores, bootstrap_n=1000):
 
     boot_sample_size = data.shape[0]
     llf_collector = {}
@@ -74,21 +82,14 @@ def bootstrap_limmpca(h1_models, models,
         print(f"set up null model {nm}")
         # set up null model
         cur_null = models[nm]
-        h0_models = parallel_mixed_modelling(cur_null, data, scores)
 
-        obs_effect = effect_matrix_decomposition(h0_models)
+        h0_models = ParallelMixedModel(cur_null)
+        h0_models.fit(exp_design, scores)
 
-        obs_gllr = calculate_gllr(h1_models, h0_models)
+        obs_gllr = calculate_gllr(h1_llf, h0_models.llf)
         print(f"true gllr: {obs_gllr}")
 
-        # get sigma squared (variance) from redisuals and random factors
-        obs_nullify_ix = [c for c in obs_effect[0].columns if "random effect:" in c or "residuals" in c]
-        # obs_sigma = [np.var(orv[obs_nullify_ix]) for orv in obs_effect]
-        obs_sigma = [np.std(orv[obs_nullify_ix]) for orv in obs_effect]
-        obs_sigma = pd.concat(obs_sigma, axis=1)
-        obs_nullify_ix = [o.replace('random effect: ', '') for o in obs_nullify_ix]
-        obs_sigma.index = obs_nullify_ix
-        print(obs_sigma.round(3))
+        obs_sigma = get_sigma_sqr(h0_models.effectmat)
 
         # boot strapping
         boot_gllrs = []
