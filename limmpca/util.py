@@ -19,14 +19,12 @@ def varimax(Phi, gamma=1, q=20, tol=1e-6):
         if d/d_old < tol: break
     return np.dot(Phi, R)
 
-def correct_scale(data, labels):
-    # correct each subject by used scale range
-    for id in np.unique(data.RIDNO):
-        id_idx = data['RIDNO'].str.match(id)
-        cur = data[id_idx].loc[:, labels].values
-        scling = np.max(cur.flatten())
-        floor = np.min(cur.flatten())
-        cur = (cur - floor) / scling
-        # update
-        data[id_idx].loc[:, labels] = cur
-    return data
+
+def rescale(data):
+    """
+    Rescale the data to ensure the smallest value is always 0 and max 1
+    """
+    data = data.astype(float)
+    ceiling = np.max(data.ravel())
+    floor = np.min(data.ravel())
+    return (data - floor) / (ceiling - floor)
