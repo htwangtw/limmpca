@@ -46,7 +46,24 @@ models = {
     're_formula': '0',
     'vc_formula': {"Judges": "0 + C(Judges)",
                    "CandiesJudges": "0 + C(CandiesJudges)"}
-                   }
+                   },
+    "Candies": {'formula': '~ 1',
+    'groups': 'group',
+    're_formula': '0',
+    'vc_formula': {"Judges": "0 + C(Judges)",
+                   "CandiesJudges": "0 + C(CandiesJudges)"}
+                   },
+    "Judges": {'formula': '~ C(Candies)',
+    'groups': 'group',
+    're_formula': '0',
+    'vc_formula': {
+                   "CandiesJudges": "0 + C(CandiesJudges)"}
+                   },
+    "CandiesJudges": {'formula': '~ C(Candies)',
+    'groups': 'group',
+    're_formula': '0',
+    'vc_formula': {"Judges": "0 + C(Judges)"}
+                   },
 }
 # %%
 exp_design['group'] = 1
