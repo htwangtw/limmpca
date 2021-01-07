@@ -3,6 +3,9 @@ import numpy as np
 
 
 def varimax(Phi, gamma=1, q=20, tol=1e-6):
+    """
+    Code from wikiepdia and I don't know how to write test for this one...
+    """
     p, k = Phi.shape
     R = np.eye(k)
     d = 0
@@ -28,3 +31,17 @@ def rescale(data):
     ceiling = np.max(data.ravel())
     floor = np.min(data.ravel())
     return (data - floor) / (ceiling - floor)
+
+def correct_scale(data, labels):
+    """
+    York cohort
+    project specific function
+    """
+    # correct each subject by used scale range
+    for id in np.unique(data.RIDNO):
+        id_idx = data['RIDNO'].str.match(id)
+        cur = data.loc[id_idx, labels].values
+        res = rescale(cur)
+        # update
+        data.loc[id_idx, labels] = res
+    return data

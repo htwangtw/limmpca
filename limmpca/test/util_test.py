@@ -1,6 +1,26 @@
-from ..util import rescale
+from ..util import rescale, correct_scale
 
 import numpy as np
+import pandas as pd
+
+
+def test_correct_scale():
+    # generate test data
+    ridno = ["R2234", "R0452", "R4345"]
+    labels = ["a", "b", "c", "d", "e"]
+    scores = np.array([
+        [0.1, 0.6, 0.3, 0.4, 0.5],
+        [0.3, 0.1, 0.3, 0.7, 0.2],
+        [0.4, 0.3, 0.2, 0.8, 0.2]
+        ])
+    data = pd.DataFrame(scores, columns=labels)
+    data["RIDNO"] = ridno
+    data["sex"] = ["F", "M", "F"]
+
+    new = correct_scale(data, labels)
+    rs = np.array([rescale(s)for s in scores])
+    comparison = new.loc[:, labels].values == rs
+    assert comparison.all() == True
 
 def test_rescale():
     test_data1 = np.array([
@@ -11,13 +31,16 @@ def test_rescale():
         [0.1, 0.6, 0.3, 0.4, 0.5],
         [0.3, 0.1, 0.3, 0.7, 0.2]
         ])
+    test_data3 = np.random.rand(55, 12)
+
     rescale1 = rescale(test_data1)
     rescale2 = rescale(test_data2)
 
-    print(rescale1)
     assert max(rescale1.ravel()) == 1
     assert min(rescale1.ravel()) == 0
 
-    print(rescale2)
     assert max(rescale2.ravel()) == 1
     assert min(rescale2.ravel()) == 0
+    rescale3 = rescale(test_data3)
+    assert max(rescale3.ravel()) == 1
+    assert min(rescale3.ravel()) == 0

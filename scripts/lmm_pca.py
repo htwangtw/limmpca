@@ -12,8 +12,9 @@ from scipy.stats import zscore
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from limmpca.util import correct_scale
-from limmpca.model import ParallelMixedModel
+from ..limmpca.util import correct_scale
+from ..limmpca.model import ParallelMixedModel
+
 
 #%% load data and basic clean up
 
