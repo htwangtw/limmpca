@@ -5,7 +5,7 @@ from scipy.stats import zscore
 
 def test_data():
     # load data
-    data = pd.read_csv("limmpca/test/data/Candies.tsv", sep="\t")
+    data = pd.read_csv("data/Candies.tsv", sep="\t")
 
     # PCA
     X = data.iloc[:, 2:].values
