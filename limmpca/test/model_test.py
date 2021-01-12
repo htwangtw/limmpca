@@ -1,5 +1,5 @@
 from ..model import _combine_data, _get_m
-from ..make_data import test_data
+from .make_data import test_data
 
 import numpy as np
 import pandas as pd
