@@ -3,6 +3,9 @@ import numpy as np
 from sklearn.decomposition import PCA
 from scipy.stats import zscore
 
+import os
+print(os.getcwd())
+
 def test_data():
     # load data
     data = pd.read_csv("./data/Candies.tsv", sep="\t")
