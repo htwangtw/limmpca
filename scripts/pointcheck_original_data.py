@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from limmpca.model import ParallelMixedModel
 
 # %%
-data = pd.read_csv("data/test_data/Candies.tsv", sep="\t")
+data = pd.read_csv("limmpca/test/data/Candies.tsv", sep="\t")
 exp_design = data.iloc[:, :2]
 X = data.iloc[:, 2:].values
 Xz = zscore(X)

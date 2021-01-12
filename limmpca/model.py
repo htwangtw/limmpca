@@ -8,16 +8,20 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 def _combine_data(exp_design, pca_scores):
-    # combine PC scores and experiment design
-    # generate a dataframe that's suitable for statsmodel
+    '''
+    combine PC scores and experiment design
+    generate a dataframe that's suitable for statsmodel
+    '''
     data = exp_design.copy()
     for i in range(pca_scores.shape[-1]):
         data[f"factor_{i + 1}"] = pca_scores[:, i]
     return data
 
 def _check_category(name):
-    # categorical variables are broken into different levels
-    # we need to find them and calculate a combined score for variance explained
+    '''
+    categorical variables are broken into different levels
+    we need to find them and calculate a combined score for variance explained
+    '''
     category_var = r"C\(([A-Za-z0-9_]+)\)\[T.[0-9]+\]$"
     cat_finder = re.search(category_var, name)
     if cat_finder is None:
@@ -26,30 +30,16 @@ def _check_category(name):
         return cat_finder.group(1)
 
 def _get_m(tau, coef):
+    '''
+    effect matrix of the current factor
+    '''
     return np.dot(tau, coef)
 
-def _fixed_effects(fitted_model):
-    '''
-    Input is a statsmodel LMM output
-    '''
-    fe_params = fitted_model.fe_params  # get the full fixed variable coefficient matrix
-    fe_names = fitted_model.model.exog_names  # fixed variable names
-    fe_input = fitted_model.model.exog
-
-    # get fixed effect
-    mf = {}
-    for j, name in enumerate(fe_names):
-        m = _get_m(fe_input[:, j], fe_params[name])
-
-        # update the effective matrix
-        name = _check_category(name)
-        if name in mf.columns.tolist():
-            mf[name] += m
-        else: # not a categorical variable or found new category
-            mf[name] = m
-    return pd.DataFrame(mf)
-
 def _get_random_structure(group_ix, k_vc, exog_vc_mat, exog_re_li):
+    '''
+    easy check on random structure
+    if there's variance compoenent, handle it later
+    '''
     mat = []
     if exog_re_li is not None:
         mat.append(exog_re_li[group_ix])
@@ -58,8 +48,10 @@ def _get_random_structure(group_ix, k_vc, exog_vc_mat, exog_re_li):
     return np.concatenate(mat, axis=1)
 
 def _get_nested_structure(mr, mat, re_group, exog_vc_names):
-    # handle random structure of multiple level
-    # this loop would be ignored if no nested structure was modeled
+    '''
+    handle random structure of multiple level
+    this loop would be ignored if no nested structure was modeled
+    '''
     levels = []
     for vc in exog_vc_names:
         colname = f"random effect: {vc}"
@@ -99,7 +91,28 @@ def _get_random_coeff(mr, mat, remained_labels):
             mr[colname] = np.concatenate([mr[colname], mr_j], axis=0)
     return mr
 
-def _random_effects(fitted_model):
+def _fixed_effects(fitted_model):
+    '''
+    Input is a statsmodel LMM output
+    '''
+    fe_params = fitted_model.fe_params  # get the full fixed variable coefficient matrix
+    fe_names = fitted_model.model.exog_names  # fixed variable names
+    fe_input = fitted_model.model.exog
+
+    # get fixed effect
+    mf = {}
+    for j, name in enumerate(fe_names):
+        m = _get_m(fe_input[:, j], fe_params[name])
+
+        # update the effective matrix
+        name = _check_category(name)
+        if name in mf:
+            mf[name] += m
+        else: # not a categorical variable or found new category
+            mf[name] = m
+    return pd.DataFrame(mf)
+
+def _random_effects(fitted_model):  # to do: this is not right
     '''
     Input is a statsmodel LMM output
     '''
@@ -113,7 +126,7 @@ def _random_effects(fitted_model):
     exog_re_li = fitted_model.model.exog_re_li
 
     mr = {}
-    # for each group
+    # for each group (subject)
     for group_ix, group in enumerate(groups):
         # get random structure design
         mat = _get_random_structure(group_ix, k, vc_mat, exog_re_li)
@@ -125,6 +138,7 @@ def _random_effects(fitted_model):
 
         # random coefficients or structure with one level only
         remained_labels = re[group][~re[group].index.isin(levels)]
+        print(remained_labels)
         mr = _get_random_coeff(mr, mat, remained_labels)
     return pd.DataFrame(mr)
 
@@ -153,7 +167,7 @@ def parallel_mixed_model(model, exp_design, pca_scores):
 
     assert ["formula", "groups", "re_formula", "vc_formula"] in list(model.keys())
     m_components = pca_scores.shape[-1]
-    data = combine_data(exp_design, pca_scores)
+    data = _combine_data(exp_design, pca_scores)
     llf, effectmat = [], []
     for i in range(m_components):
         print(f"{i + 1} / {m_components}")
@@ -170,8 +184,8 @@ def parallel_mixed_model(model, exp_design, pca_scores):
         # fittedmodels.append(fitted_model)
 
         # effect mat decomposition
-        mf = fixed_effects(fitted_model)
-        mr = random_effects(fitted_model)
+        mf = _fixed_effects(fitted_model)
+        mr = _random_effects(fitted_model)
 
         # fitted_val should be the same as fitted_model.fittedvalues
         fitted_val = mf.sum(axis=1) + mr.sum(axis=1)
