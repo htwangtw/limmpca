@@ -5,21 +5,26 @@ import pandas as pd
 
 
 def test_correct_scale():
-    # generate test data
-    ridno = ["R2234", "R0452", "R4345"]
+    # generate test data - first subject has two entries
+    ridno = ["R2234", "R2234", "R0452", "R4345"]
     labels = ["a", "b", "c", "d", "e"]
     scores = np.array([
         [0.1, 0.6, 0.3, 0.4, 0.5],
+        [0.4, 0.8, 0.4, 0.1, 0.5],
         [0.3, 0.1, 0.3, 0.7, 0.2],
         [0.4, 0.3, 0.2, 0.8, 0.2]
         ])
     data = pd.DataFrame(scores, columns=labels)
     data["RIDNO"] = ridno
-    data["sex"] = ["F", "M", "F"]
+    data["sex"] = ["F", "F", "M", "F"]
 
-    new = correct_scale(data, labels)
-    rs = np.array([rescale(s)for s in scores])
-    comparison = new.loc[:, labels].values == rs
+    # manually compute the rescale data
+    rs = np.vstack(
+        (rescale(scores[:2]),
+         np.array([rescale(s)for s in scores[2:]])
+        ))
+    data_rescaled = correct_scale(data, labels)
+    comparison = data_rescaled.loc[:, labels].values == rs
     assert comparison.all() == True
 
 def test_rescale():
