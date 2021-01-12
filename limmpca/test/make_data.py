@@ -4,7 +4,6 @@ from sklearn.decomposition import PCA
 from scipy.stats import zscore
 
 import os
-print(os.getcwd())
 
 def test_data():
     # load data
