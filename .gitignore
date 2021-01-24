@@ -1,5 +1,5 @@
 data/
-confirmations/
+*/confirmations/
 results/
 .Rhistory
 
@@ -132,3 +132,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.vscode/settings.json
