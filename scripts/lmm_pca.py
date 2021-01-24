@@ -12,8 +12,9 @@ from scipy.stats import zscore
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from ..limmpca.util import correct_scale
-from ..limmpca.model import ParallelMixedModel
+from limmpca.util import correct_scale
+from limmpca.model import (parallel_mixed_model,
+    variance_explained)
 
 
 #%% load data and basic clean up
@@ -27,7 +28,7 @@ bootstrap_n = 2000
 # set random seed
 np.random.seed(42)
 
-project_path = Path.home() / "projects/lmm_pca/"
+project_path = Path.home() / "projects/limmpca/"
 es_path = project_path / "data/task-nbackES_probes_trial_interval.tsv"
 exp_design = pd.read_csv(es_path, sep="\t", index_col=0)
 # use the first cohort
@@ -129,7 +130,7 @@ models = {
     're_formula': '1 ',
     'vc_formula': None},
     "nBack": {
-        "formula": "~ 1+ interval",
+        "formula": "~ 1 + interval",
         "groups": "RIDNO",
         "re_formula": "1",
         "vc_formula": None
@@ -149,68 +150,55 @@ models = {
 }
 
 #%% run true model
-h1_models = ParallelMixedModel(models["full_model"])
-h1_models.fit(exp_design, scores)
+llf, effectmat = parallel_mixed_model(models["full_model"],
+    exp_design, scores)
 
-#%%
-sns.color_palette("tab10")
-# plot results so far
-chart = sns.barplot(x="Effect", y="variance(%)",
-                    hue="PC", data=percent_var_exp
-                    )
-# chart.set_ylim(0, 1)
-chart.set_xticklabels(
-    chart.get_xticklabels(),
-    rotation=45,
-    horizontalalignment='right',
-)
-plt.title("Variance of components" + pca_varimax)
-plt.show()
+percent_var_exp = variance_explained(effectmat)
 
-#%% bootstrapping
-llf_collector = bootstrap_limmpca(h1_models, models,
-                                  data, scores, bootstrap_n)
+#%% bootstrapping - need work
+# llf_collector = bootstrap_limmpca(h1_models, models,
+#                                   data, scores, bootstrap_n)
 
-#%% save results
-try:
-	llf_file = open(project_path / 'results/llf_bootstrap_results_test.pkl', 'wb')
-	pickle.dump(llf_collector, llf_file)
-	llf_file.close()
+# #%% save results
+# try:
+# 	llf_file = open(project_path / 'results/llf_bootstrap_results_test.pkl', 'wb')
+# 	pickle.dump(llf_collector, llf_file)
+# 	llf_file.close()
 
-except:
-	print("Something went wrong")
+# except:
+# 	print("Something went wrong")
 
-#%% load bootstrap results
-llf_file = open(project_path / 'results/llf_bootstrap_results_interaction.pkl', 'rb')
-llf_collector = pickle.load(llf_file)
-llf_file.close()
-#%% visualise bootstrap results
+# #%% load bootstrap results
+# llf_file = open(project_path / 'results/llf_bootstrap_results_interaction.pkl', 'rb')
+# llf_collector = pickle.load(llf_file)
+# llf_file.close()
+# #%% visualise bootstrap results
 
-restricted_llr = []
-true_llf = [m.llf for m in h1_models]
-for k in llf_collector.keys():
-    boot_llr = llf_collector[k]["bootstrap global llr"]
-    p_value = llf_collector[k]["p-value"]
-    obs_llf = llf_collector[k]["observed global llr"]
-    rest_llf = llf_collector[k]["restricted models llr"]
-    plt.figure()
-    dist = sns.distplot(boot_llr, kde=False)
-    plt.title(k)
-    plt.vlines(obs_llf, 0, dist.get_ylim()[-1] + 5,
-               linestyles="--")
-    plt.savefig(project_path / f'results/bootstrap_{k}.png')
+# restricted_llr = []
+# true_llf = [m.llf for m in h1_models]
+# for k in llf_collector.keys():
+#     boot_llr = llf_collector[k]["bootstrap global llr"]
+#     p_value = llf_collector[k]["p-value"]
+#     obs_llf = llf_collector[k]["observed global llr"]
+#     rest_llf = llf_collector[k]["restricted models llr"]
+#     plt.figure()
+#     dist = sns.distplot(boot_llr, kde=False)
+#     plt.title(k)
+#     plt.vlines(obs_llf, 0, dist.get_ylim()[-1] + 5,
+#                linestyles="--")
+#     plt.savefig(project_path / f'results/bootstrap_{k}.png')
 
-    df = pd.DataFrame({"(R)LLR": 2 * (np.array(true_llf) - np.array(rest_llf)),
-                       "Removed factor": [k] * 13,
-                       "Principle component": list(range(1, 14))})
+#     df = pd.DataFrame({"(R)LLR": 2 * (np.array(true_llf) - np.array(rest_llf)),
+#                        "Removed factor": [k] * 13,
+#                        "Principle component": list(range(1, 14))})
 
-    restricted_llr.append(df)
-    print(p_value)
+#     restricted_llr.append(df)
+#     print(p_value)
 
-restricted_llr = pd.concat(restricted_llr)
-rllr_plot = sns.catplot(x="Principle component", y="(R)LLR", hue="Removed factor",
-            data=restricted_llr, kind="bar")
-rllr_plot.savefig(project_path / 'results/rllr.png')
+# restricted_llr = pd.concat(restricted_llr)
+# rllr_plot = sns.catplot(x="Principle component", y="(R)LLR", hue="Removed factor",
+#             data=restricted_llr, kind="bar")
+# rllr_plot.savefig(project_path / 'results/rllr.png')
 
 # potential idea:
 # if the model isolated out the effect of the experiment,
@@ -218,9 +206,9 @@ rllr_plot.savefig(project_path / 'results/rllr.png')
 # measures are explaining the residual?
 
 #%% visualise pure patterns explained
-effect_names = effect_mats[0].columns.tolist()[1:]
+effect_names = effectmat[0].columns.tolist()[1:]
 for name in effect_names:
-    cur_eff = np.array([mat[name].values for mat in effect_mats]).T
+    cur_eff = np.array([mat[name].values for mat in effectmat]).T
     weighted_scores = cur_eff.dot(pc)
     cur_pca = PCA(svd_solver='full').fit(weighted_scores)
 
@@ -249,76 +237,5 @@ for name in effect_names:
     plt.show()
 
     cur_scores = cur_pca.transform(weighted_scores)[:, :1]
-# #%% Back transpose PCA - nback
-# cur_eff = np.array([mat["C(nBack)[T.1]"].values for mat in effect_mats]).T
-# weighted_scores = cur_eff.dot(pc)
-# cur_pca = PCA(svd_solver='full').fit(weighted_scores)
-
-# plt.plot(cur_pca.explained_variance_ratio_)
-# plt.show()
-
-# transpos_back_pca = cur_pca.components_[:1, :]
-# plt.matshow(transpos_back_pca.T, cmap="RdBu_r")
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, labels].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-
-# cur_scores = cur_pca.transform(weighted_scores)[:, :1]
-
-# #%% Back transpose PCA - nback random intercept
-# eff = np.array([mat["random effect: \nsession"].values for mat in effect_mats]).T
-# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-# plt.plot(cur_pca.explained_variance_ratio_)
-# plt.show()
-
-# transpos_back_pca = cur_pca.components_.dot(pc)
-# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-# #%% Back transpose PCA - sample
-# eff = np.array([mat["random effect: \nRIDNO"].values for mat in effect_mats]).T
-# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-# plt.plot(cur_pca.explained_variance_ratio_)
-# plt.show()
-
-# transpos_back_pca = cur_pca.components_.dot(pc)
-# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-# #%% Back transpose PCA - nback random intercept
-# eff = np.array([mat["random effect: \nC(nBack)[T.1]"].values for mat in effect_mats]).T
-# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-# plt.plot(cur_pca.explained_variance_ratio_)
-# plt.show()
-
-# transpos_back_pca = cur_pca.components_.dot(pc)
-# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-
-# #%% Back transpose PCA - residual
-# eff = np.array([mat["residual"].values for mat in effect_mats]).T
-# cur_pca = PCA(svd_solver='full').fit(eff.dot(pc))
-# plt.plot(cur_pca.explained_variance_ratio_)
-# plt.show()
-
-# transpos_back_pca = cur_pca.components_.dot(pc)
-# plt.matshow(transpos_back_pca[:2, :].T, cmap="RdBu_r")
-# plt.yticks(ticks=range(13),
-#            labels=data.loc[:, 'MWQ_Focus':'MWQ_Deliberate'].columns)
-# plt.title("Principle components" + pca_varimax)
-# plt.colorbar()
-# plt.show()
-
-# %%
+    # save the score for gradient analysis
+# %% project tghese

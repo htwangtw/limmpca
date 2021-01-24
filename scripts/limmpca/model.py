@@ -138,7 +138,6 @@ def _random_effects(fitted_model):  # to do: this is not right
 
         # random coefficients or structure with one level only
         remained_labels = re[group][~re[group].index.isin(levels)]
-        print(remained_labels)
         mr = _get_random_coeff(mr, mat, remained_labels)
     return pd.DataFrame(mr)
 
@@ -165,7 +164,6 @@ def parallel_mixed_model(model, exp_design, pca_scores):
         fit LMM on the PCA results with the specified model
     '''
 
-    assert ["formula", "groups", "re_formula", "vc_formula"] in list(model.keys())
     m_components = pca_scores.shape[-1]
     data = _combine_data(exp_design, pca_scores)
     llf, effectmat = [], []
