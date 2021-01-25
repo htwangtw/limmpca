@@ -3,11 +3,11 @@ import numpy as np
 from sklearn.decomposition import PCA
 from scipy.stats import zscore
 
-import os
+from .utils import get_test_data_path
 
 def test_data():
     # load data
-    data = pd.read_csv("limmpca/test/data/Candies.tsv", sep="\t")
+    data = pd.read_csv(get_test_data_path() / "Candies.tsv", sep="\t")
 
     # PCA
     X = data.iloc[:, 2:].values

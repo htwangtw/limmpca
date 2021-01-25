@@ -29,7 +29,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run tests and generate coverage report
-      run: pytest --cov=./ --cov-report=xml
+      run: pytest scripts/limmpca --cov=./scripts/limmpca --cov-report=xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1.2.1
