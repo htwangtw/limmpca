@@ -8,7 +8,7 @@ on:
   push:
     branches:
       - master
-      paths:
+    paths:
       - scripts/**
 
 jobs:
