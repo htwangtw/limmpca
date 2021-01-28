@@ -11,6 +11,7 @@ from scipy.stats import zscore
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.utils.extmath import weighted_mode
 
 from limmpca.util import correct_scale
 from limmpca.model import (parallel_mixed_model,
@@ -20,7 +21,7 @@ from limmpca.model import (parallel_mixed_model,
 #%% load data and basic clean up
 
 # use the top three for dev
-n_components = 4
+n_components = 12
 pca_varimax = "; raw"
 varimax_on = False
 bootstrap_n = 2000
@@ -207,6 +208,7 @@ percent_var_exp = variance_explained(effectmat)
 
 #%% visualise pure patterns explained
 effect_names = effectmat[0].columns.tolist()[1:]
+weighted_pca={}
 for name in effect_names:
     cur_eff = np.array([mat[name].values for mat in effectmat]).T
     weighted_scores = cur_eff.dot(pc)
@@ -228,6 +230,7 @@ for name in effect_names:
     else:
         transpos_back_pca = cur_pca.components_[:1, :].T
         print(transpos_back_pca.shape)
+        weighted_pca[name] = transpos_back_pca
         ax2.matshow(transpos_back_pca, cmap="RdBu_r")
         ax2.set_yticks(range(13))
         ax2.set_yticklabels(labels)
@@ -238,4 +241,28 @@ for name in effect_names:
 
     cur_scores = cur_pca.transform(weighted_scores)[:, :1]
     # save the score for gradient analysis
-# %% project tghese
+# %% project these
+factors = exp_design.copy()
+factors["factor_nBack"] = Xz.dot(weighted_pca["nBack"])
+factors["factor_interval"] = Xz.dot(weighted_pca["interval"])
+
+factors_noCond_split = factors.pivot_table(
+    values=["factor_nBack", "factor_interval"],
+    index=['RIDNO', 'groups'])
+factors_noCond_split.columns = ["factor_interval",  "factor_nBack"]
+factors_noCond_split = factors_noCond_split.reset_index().set_index("RIDNO")
+
+factors_0back = factors[factors["nBack"] == 0].pivot_table(
+    values=["factor_nBack", "factor_interval"],
+    index=['nBack', 'RIDNO', 'IDNO', 'groups'])
+factors_0back.columns = ["nback0_factor_interval",  "nback0_factor_nBack"]
+factors_0back = factors_0back.reset_index().set_index("RIDNO")
+
+factors_1back = factors[factors["nBack"] == 1].pivot_table(
+    values=["factor_nBack", "factor_interval"],
+    index=['nBack', 'RIDNO', 'IDNO', 'groups'])
+factors_1back.columns = ["nback1_factor_interval",  "nback1_factor_nBack"]
+factors_1back = factors_1back.reset_index().set_index("RIDNO")
+
+factors_limm = pd.concat([factors_noCond_split, factors_0back, factors_1back],
+    axis=1)
