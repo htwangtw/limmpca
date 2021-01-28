@@ -247,22 +247,38 @@ factors["factor_nBack"] = Xz.dot(weighted_pca["nBack"])
 factors["factor_interval"] = Xz.dot(weighted_pca["interval"])
 
 factors_noCond_split = factors.pivot_table(
-    values=["factor_nBack", "factor_interval"],
+    values=["factor_nBack", "factor_interval", "interval"],
     index=['RIDNO', 'groups'])
-factors_noCond_split.columns = ["factor_interval",  "factor_nBack"]
 factors_noCond_split = factors_noCond_split.reset_index().set_index("RIDNO")
 
 factors_0back = factors[factors["nBack"] == 0].pivot_table(
     values=["factor_nBack", "factor_interval"],
     index=['nBack', 'RIDNO', 'IDNO', 'groups'])
-factors_0back.columns = ["nback0_factor_interval",  "nback0_factor_nBack"]
+factors_0back = factors_0back.rename(
+    columns={"factor_nBack": "nback0_factor_nBack",
+            "factor_interval": "nback0_factor_interval",
+    })
 factors_0back = factors_0back.reset_index().set_index("RIDNO")
 
 factors_1back = factors[factors["nBack"] == 1].pivot_table(
     values=["factor_nBack", "factor_interval"],
     index=['nBack', 'RIDNO', 'IDNO', 'groups'])
-factors_1back.columns = ["nback1_factor_interval",  "nback1_factor_nBack"]
+factors_1back = factors_1back.rename(
+    columns={"factor_nBack": "nback0_factor_nBack",
+            "factor_interval": "nback0_factor_interval",
+    })
 factors_1back = factors_1back.reset_index().set_index("RIDNO")
 
 factors_limm = pd.concat([factors_noCond_split, factors_0back, factors_1back],
     axis=1)
+factors_limm = factors_limm.loc[:,~factors_limm.columns.duplicated()]
+
+# gradient
+gradients = pd.read_csv("data/gradients.csv")
+gradients = gradients.rename(columns={"Rnumber": "RIDNO"})
+gradients = gradients.set_index("RIDNO").drop_duplicates()
+
+master = pd.concat([gradients, factors_limm], axis=1)
+master = master.dropna()
+
+master.to_csv("results/limmpca_factors.tsv", sep="\t")
