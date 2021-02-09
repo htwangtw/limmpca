@@ -21,7 +21,7 @@ from limmpca.model import (parallel_mixed_model,
 #%% load data and basic clean up
 
 # use the top three for dev
-n_components = 12
+n_components = 4
 pca_varimax = "; raw"
 varimax_on = False
 bootstrap_n = 2000
@@ -50,6 +50,10 @@ exp_design["interval"] = zscore(exp_design["interval"])
 labels = ['MWQ_Focus','MWQ_Future','MWQ_Past','MWQ_Self','MWQ_Other',
           'MWQ_Emotion','MWQ_Words', 'MWQ_Images',
           'MWQ_Deliberate','MWQ_Detailed','MWQ_Evolving','MWQ_Habit','MWQ_Vivid',]
+display = ['Task','Future','Past','Self','People',
+          'Emotion','Words', 'Images',
+          'Deliberate','Detailed','Evolving','Habit','Vivid',]
+
 exp_design = correct_scale(exp_design, labels)
 exp_design = exp_design.reset_index(drop=True)
 #%% naive PCA
@@ -106,14 +110,14 @@ plt.plot(pc[0, :], pc[1, :], ".")
 plt.xlabel("PC 1")
 plt.ylabel("PC 2")
 for i in range(13):
-    plt.annotate(labels[i].split("_")[-1],
+    plt.annotate(display[i].split("_")[-1],
                  (pc[0, i], pc[1, i]), )
 #%% pc loadings
 plt.matshow(pc.T, cmap="RdBu_r", vmax=0.7, vmin=-0.7)
 plt.xticks(ticks=range(n_components),
            labels=range(1, n_components + 1))
-plt.yticks(ticks=range(len(labels)),
-           labels=labels)
+plt.yticks(ticks=range(len(display)),
+           labels=display)
 plt.title("Principle components" + pca_varimax)
 plt.colorbar()
 plt.show()
@@ -121,8 +125,8 @@ plt.show()
 #%% parallel mixed modelling - formula method
 # define model
 # this nested model can be recreated in R as follow
-# lmer(factor_i ~  1 + C(nBack) * interval
-#      + (1 + interval|C(RIDNO)/C(session)), data=data)
+# lmer(factor_i ~  1 + C(nBack) + interval
+#      + (1 | C(RIDNO)), data=data)
 # i = 1, ...., m
 # m is the number of componensts
 models = {
@@ -233,7 +237,7 @@ for name in effect_names:
         weighted_pca[name] = transpos_back_pca
         ax2.matshow(transpos_back_pca, cmap="RdBu_r")
         ax2.set_yticks(range(13))
-        ax2.set_yticklabels(labels)
+        ax2.set_yticklabels(display)
         ax2.set_xticklabels("")
         # ax2.colorbar()
     ax2.set_title(f"Pure principle components")
@@ -241,31 +245,41 @@ for name in effect_names:
 
     cur_scores = cur_pca.transform(weighted_scores)[:, :1]
     # save the score for gradient analysis
-# %% project these
+# %% project these to the data
 factors = exp_design.copy()
 factors["factor_nBack"] = Xz.dot(weighted_pca["nBack"])
 factors["factor_interval"] = Xz.dot(weighted_pca["interval"])
-
+for i in range(scores.shape[-1]):
+    factors[f"factor_{i + 1}"] = scores[:, i]
+original = [f"factor_{i + 1}" for i in range(n_components)]
 factors_noCond_split = factors.pivot_table(
-    values=["factor_nBack", "factor_interval", "interval"],
+    values=["factor_nBack", "factor_interval", "interval"] + original ,
     index=['RIDNO', 'groups'])
 factors_noCond_split = factors_noCond_split.reset_index().set_index("RIDNO")
 
 factors_0back = factors[factors["nBack"] == 0].pivot_table(
-    values=["factor_nBack", "factor_interval"],
+    values=["factor_nBack", "factor_interval"] + original,
     index=['nBack', 'RIDNO', 'IDNO', 'groups'])
 factors_0back = factors_0back.rename(
     columns={"factor_nBack": "nback0_factor_nBack",
             "factor_interval": "nback0_factor_interval",
+            "factor_1": "nback0_factor_1",
+            "factor_2": "nback0_factor_2",
+            "factor_3": "nback0_factor_3",
+            "factor_4": "nback0_factor_4",
     })
 factors_0back = factors_0back.reset_index().set_index("RIDNO")
 
 factors_1back = factors[factors["nBack"] == 1].pivot_table(
-    values=["factor_nBack", "factor_interval"],
+    values=["factor_nBack", "factor_interval"] + original,
     index=['nBack', 'RIDNO', 'IDNO', 'groups'])
 factors_1back = factors_1back.rename(
-    columns={"factor_nBack": "nback0_factor_nBack",
-            "factor_interval": "nback0_factor_interval",
+    columns={"factor_nBack": "nback1_factor_nBack",
+            "factor_interval": "nback1_factor_interval",
+            "factor_1": "nback1_factor_1",
+            "factor_2": "nback1_factor_2",
+            "factor_3": "nback1_factor_3",
+            "factor_4": "nback1_factor_4",
     })
 factors_1back = factors_1back.reset_index().set_index("RIDNO")
 
@@ -281,4 +295,4 @@ gradients = gradients.set_index("RIDNO").drop_duplicates()
 master = pd.concat([gradients, factors_limm], axis=1)
 master = master.dropna()
 
-master.to_csv("results/limmpca_factors.tsv", sep="\t")
+master.to_csv(f"results/limmpca_factors_top{n_components}.tsv", sep="\t")
