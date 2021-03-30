@@ -5,12 +5,9 @@ on:
     branches: [ master ]
     paths:
     - '**.py'
-    - '!original/**'
 
   pull_request:
     branches: [ master ]
-    paths:
-    - '!original/**'
 
   workflow_dispatch:
 
@@ -30,7 +27,7 @@ jobs:
       - name: Code Quality
         run: poetry run black limmpca --check
       - name: Test and return coverage report
-        run: poetry run pytest --cov ./limmpca --cov-report xml
+        run: poetry run pytest ./limmpca --cov ./limmpca --cov-report xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1.2.1
         with:
