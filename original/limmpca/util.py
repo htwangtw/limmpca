@@ -15,7 +15,7 @@ def varimax(Phi, gamma=1, q=20, tol=1e-6):
         rot_tmp = np.diag(np.diag(np.dot(Lambda.T,Lambda)))
         lam_rotate = np.dot(Lambda, rot_tmp)
         mat = np.asarray(Lambda)**3 - (gamma / p) * lam_rotate
-        mat = np.dot(Phi.T, tmp)
+        mat = np.dot(Phi.T, rot_tmp)
         u, s, vh = np.linalg.svd(mat)
         R = np.dot(u, vh)
         d = np.sum(s)
