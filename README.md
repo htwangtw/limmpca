@@ -1,5 +1,5 @@
 # limmpca
-Linear mixed model PCA on experience sampling data
+Combine linear mixed model with PCA
 
 [![codecov](https://codecov.io/gh/htwangtw/limmpca/branch/master/graph/badge.svg?token=kkLZAJ1E4G)](https://codecov.io/gh/htwangtw/limmpca)
 
