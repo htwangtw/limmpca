@@ -5,13 +5,12 @@ on:
     branches: [ master ]
     paths:
     - '**.py'
-    paths-ignore:
-    - 'original/**'
+    - '!original/**'
 
   pull_request:
     branches: [ master ]
-    paths-ignore:
-    - 'original/**'
+    paths:
+    - '!original/**'
 
   workflow_dispatch:
 
